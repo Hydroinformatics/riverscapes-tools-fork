@@ -14,7 +14,7 @@ def augment_layermeta(proj_type: str, lyr_descriptions: str, lyr_types: dict):
     lyr_descriptions (str): path to a layer_descriptions.json {LayerType ref: [description, sourceurl, productversion]}.
     lyr_types: the LayerTypes dict specified at the beginning of model scripts
     """
-    with open(lyr_descriptions, 'r') as f:
+    with open(lyr_descriptions, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
 
     for k, lyr in lyr_types.items():
