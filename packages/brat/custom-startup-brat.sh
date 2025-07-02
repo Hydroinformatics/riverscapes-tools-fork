@@ -9,29 +9,37 @@
 (: "${HYDRO?}")
 (: "${ANTHRO?}")
 (: "${VBET?}")
-# logistical:
-(: "${ENV_EGG?}")
+# other:
+(: "${HUC10?}")
+(: "${ENV_EGG_DIR?}")
 (: "${OUTPUT_DIR?}")
 
-echo "RS_DIR: $RS_DIR"
-echo "HYDRO_DIR: $HYDRO_DIR"
-echo "ANTHRO_DIR: $ANTHRO_DIR"
-echo "VBET_DIR: $VBET_DIR"
+echo "———Input Sources:———"
+echo "RS: $RS"
+echo "HYDRO: $HYDRO"
+echo "ANTHRO: $ANTHRO"
+echo "VBET: $VBET"
+echo "———Other:———"
+echo "HUC10: $HUC10"
+echo "ENV_EGG_DIR: $ENV_EGG_DIR"
+echo "OUTPUT_DIR: $OUTPUT_DIR"
 
 # build and install
 python setup.py build
 python setup.py install
 
 # manual copying for some reason
-cp sqlbrat/layer_descriptions.json \
-    /Users/evan/anaconda3/envs/sqlbrat/lib/python3.10/site-packages/sqlbrat-5.1.5-py3.10.egg/sqlbrat
-cp -R database \
-    /Users/evan/anaconda3/envs/sqlbrat/lib/python3.10/site-packages/sqlbrat-5.1.5-py3.10.egg
-cp sqlbrat/brat_report.css /Users/evan/anaconda3/envs/sqlbrat/lib/python3.10/site-packages/sqlbrat-5.1.5-py3.10.egg/sqlbrat
+cp sqlbrat/layer_descriptions.json $ENV_EGG_DIR/sqlbrat
+cp sqlbrat/brat_report.css $ENV_EGG_DIR/sqlbrat
+cp -R database $ENV_EGG_DIR
 
+echo "Copied layer_descriptions, css, and database into $ENV_EGG_DIR"
 
 # Run the tool for Lower Siletz
-brat 1710020407 \
+
+echo "Running BRAT for HUC $HUC10"
+
+brat $HUC10 \
     $RS/topography/dem_hillshade.tif \
     $HYDRO/outputs/hydro.gpkg/vwReaches \
     $HYDRO/outputs/hydro.gpkg/IGOGeometry \
