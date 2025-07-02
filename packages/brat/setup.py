@@ -37,6 +37,8 @@ setup(name='sqlbrat',
       },
       url='https://github.com/Riverscapes/vbet',
       packages=[
-          'sqlbrat'
+          'sqlbrat',
+          'sqlbrat.utils',
+          'sqlbrat.validation'
       ]
       )
