@@ -5,6 +5,8 @@
 
 # We need these environment variables to be set
 # input sources (paths to directories):
+
+'''CURRENTLY BROKEN - TODO FIX'''
 (: "${RS?}")
 (: "${HYDRO?}")
 (: "${ANTHRO?}")
@@ -55,7 +57,7 @@ brat $HUC10 \
     $OUTPUT_DIR \
     --reach_codes 33400,33600,33601,33603,46000,46003,46006,46007 \
     --canal_codes 33600,33601,33603 \
-    --peren_codes 46006,55800,33400 \
+    --peren_codes 46006 \
     --flow_areas $RS/hydrology/nhdplushr.gpkg/NHDArea \
     --waterbodies $RS/hydrology/nhdplushr.gpkg/NHDWaterbody \
     --verbose
