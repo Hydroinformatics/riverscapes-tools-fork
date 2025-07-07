@@ -34,6 +34,7 @@ setup(name='hydro_context',
       zip_safe=False,
       url='https://github.com/Riverscapes/riverscapes-tools/tree/master/packages/hydro',
       packages=[
-          'hydro'
+          'hydro',
+          'hydro.utils',
       ]
       )
