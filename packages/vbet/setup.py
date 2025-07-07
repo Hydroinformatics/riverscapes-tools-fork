@@ -34,6 +34,7 @@ setup(name='vbet',
       zip_safe=False,
       url='https://github.com/Riverscapes/vbet',
       packages=[
-          'vbet'
+          'vbet',
+          'vbet.lib'
       ]
       )

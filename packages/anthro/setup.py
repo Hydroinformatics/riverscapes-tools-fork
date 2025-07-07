@@ -34,6 +34,7 @@ setup(name='anthro',
       zip_safe=False,
       url='https://github.com/Riverscapes/riverscapes-tools/tree/master/packages/anthro',
       packages=[
-          'anthro'
+          'anthro',
+          'anthro.utils'
       ]
       )
