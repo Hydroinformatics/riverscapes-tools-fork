@@ -319,9 +319,12 @@ def rs_context(huc: str, landfire_dir: str, ownership: str, fair_market: str, ec
     log.info(f'Processing NHDPlus V2 Output: {output_nhdplusv2_gpkg}')
     huc10_shapely_4269 = get_geometry_unary_union(nhd['WBDHU10'], 4269)
 
-    copy_feature_class(f'{nhdplusv2}/nhdflowline_network', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDFlowline'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
-    copy_feature_class(f'{nhdplusv2}/nhdarea', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDArea'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
-    copy_feature_class(f'{nhdplusv2}/nhdwaterbody', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDWaterbody'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
+    # Non-Riverscapes NOTE: I manually changed the nhdplusv2/<paths> to work for my dataset (OR)
+    #                       The old paths were causing errors since they didn't exist in the .gpkg
+    #                       You can open your .gpkg in SQLite and see the paths
+    copy_feature_class(f'{nhdplusv2}/nhdflowline_or', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDFlowline'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
+    copy_feature_class(f'{nhdplusv2}/nhdarea_or', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDArea'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
+    copy_feature_class(f'{nhdplusv2}/nhdwaterbody_or', os.path.join(output_nhdplusv2_gpkg, LayerTypes['NHDPLUSV2'].sub_layers['NHDWaterbody'].rel_path), cfg.OUTPUT_EPSG, clip_shape=huc10_shapely_4269)
     project.add_project_geopackage(datasets, LayerTypes['NHDPLUSV2'])
 
     ################################################################################################################################################
