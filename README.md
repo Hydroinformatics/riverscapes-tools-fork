@@ -14,7 +14,7 @@ https://oregonstate.box.com/s/ad54dxkhnnmaaj159awk7ndgt6n5rjtb
 (Future TODO: I may move this documentation locally onto the repo)
 
 ## Overview of Changes (last updated: 2025-07-10)
-*See committ history for proper log of changes*
+*See commit history for proper log of changes*
 
 ### Tweaks to fix bugs when running locally:
 
