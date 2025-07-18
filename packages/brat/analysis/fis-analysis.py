@@ -1,0 +1,38 @@
+# TODO:
+# view Veg FIS control surface in 3d (see code backbone below)
+
+
+
+
+
+''' from scikit-fuzzy docs
+
+#We can simulate at higher resolution with full accuracy
+upsampled = np.linspace(-2, 2, 21)
+x, y = np.meshgrid(upsampled, upsampled)
+z = np.zeros_like(x)
+
+# Loop through the system 21*21 times to collect the control surface
+for i in range(21):
+    for j in range(21):
+        sim.input['error'] = x[i, j]
+        sim.input['delta'] = y[i, j]
+        sim.compute()
+        z[i, j] = sim.output['output']
+
+# Plot the result in pretty 3D with alpha blending
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D # Required for 3D plotting
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+surf = ax.plot_surface(x, y, z, rstride=1, cstride=1, cmap='viridis',
+linewidth=0.4, antialiased=True)
+
+cset = ax.contourf(x, y, z, zdir='z', offset=-2.5, cmap='viridis', alpha=0.5)
+cset = ax.contourf(x, y, z, zdir='x', offset=3, cmap='viridis', alpha=0.5)
+cset = ax.contourf(x, y, z, zdir='y', offset=3, cmap='viridis', alpha=0.5)
+
+ax.view_init(30, 200)
+
+'''
