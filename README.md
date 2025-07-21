@@ -29,4 +29,8 @@ Changed the manual paths to the NHDPlusV2 gpkg contents to match the names of th
 If you're not running BRAT with the same input file (e.g. for a different state), you'll need to change this.
 
 
-### [future model fine-tuning?]
+### New Additions:
+
+**packages/brat/analysis folder**
+Wrote a few scripts in this folder for additional analysis of BRAT outputs and FIS sensitivity analysis.
+You can ignore these entirely and everything else should still work, or explore running them.
