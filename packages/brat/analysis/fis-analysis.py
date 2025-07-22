@@ -1,4 +1,7 @@
 # TODO:
+# visualize both FIS
+# call analysis.py
+# write all fis results to a combined database w/ proper labelling
 # view Veg FIS control surface in 3d (see code backbone below)
 
 
