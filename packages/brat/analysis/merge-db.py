@@ -20,6 +20,7 @@ July 2025
 
 
 import sqlite3
+import os
 
 # --- CONFIGURATION ---
 
@@ -37,7 +38,7 @@ source_table = 'ReachAttributes'
 # Columns to copy (must exist in all source tables)
 columns_to_copy = [
     'WatershedID',
-    'iGeo_Slope', 
+    'iGeo_Slope', 'iGeo_DA',
     'iVeg100EX', 'iVeg_30EX',
     'iVeg100HPE', 'iVeg_30HPE',
     'iHyd_Qlow', 'iHyd_Q2',
@@ -58,9 +59,10 @@ lookup_tables_to_copy = [
     'DamCapacities'
 ]
 
-# Name of the new database and table
+# Name & directory of the new database; Name of the new table
 new_db = 'brat-all-siletz-custom.db'
-new_table = 'CombinedOutputs'
+new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs-processed/'
+new_table_name = 'ReachAttributes'
 
 # Add a column to track the source database?
 track_source = True
@@ -69,11 +71,13 @@ track_source = True
 # --- SCRIPT STARTS HERE ---
 
 # Create the new database and table
-conn = sqlite3.connect(new_db)
+new_db_path = os.path.join(new_db_dir, new_db)
+conn = sqlite3.connect(new_db_path)
+print("Creating new database at {}".format(new_db_path))
 cur = conn.cursor()
 
 # Drop tables if they exists (for repeatable runs)
-cur.execute(f"DROP TABLE IF EXISTS {new_table}")
+cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
 for table in lookup_tables_to_copy:
     cur.execute(f"DROP TABLE IF EXISTS {table}")
 
@@ -84,7 +88,6 @@ if lookup_tables_to_copy:
     src_cur = src_conn.cursor()
     
     for table in lookup_tables_to_copy:
-        print(f"Copying {table}...")
         src_cur.execute(f"SELECT * FROM {table}")
         rows = src_cur.fetchall()
         col_names = [description[0] for description in src_cur.description]
@@ -108,7 +111,7 @@ if lookup_tables_to_copy:
 col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Use REAL for numeric, change as needed
 if track_source:
     col_defs += ', SourceDB TEXT'
-create_stmt = f"CREATE TABLE {new_table} ({col_defs})"
+create_stmt = f"CREATE TABLE {new_table_name} ({col_defs})"
 cur.execute(create_stmt)
 conn.commit()
 
@@ -123,10 +126,10 @@ for db in source_dbs:
     # Prepare insert statement
     placeholders = ', '.join(['?'] * len(columns_to_copy))
     if track_source:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
+        insert_stmt = f"INSERT INTO {new_table_name} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
         data = [row + (db,) for row in rows]
     else:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}) VALUES ({placeholders})"
+        insert_stmt = f"INSERT INTO {new_table_name} ({col_list}) VALUES ({placeholders})"
         data = rows
     cur.executemany(insert_stmt, data)
     src_conn.close()
@@ -134,4 +137,4 @@ for db in source_dbs:
 
 conn.commit()
 conn.close()
-print("Merging complete! Data is in", new_db)
+print("Merging complete! Data is in", new_db_path)
