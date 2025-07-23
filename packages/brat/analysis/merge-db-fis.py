@@ -1,8 +1,8 @@
 """
-Merges standard BRAT databases (.gpkg) of the SAME MODEL, on DIFFERENT REGIONS.
-    All entries (rows) of each database will be collected ("stacked") together in the new db.
-    Thus it is assumed that all rows (reaches) in each source database are unique.
-    # of items in the new db = sum of items in all source dbs
+Merges standard BRAT databases (.gpkg) of DIFFERENT MODELS (e.g. FIS adjustments) on the SAME REGION.
+    There will be one copy of each reach in the new db, with a columns of outputs from each source database.
+    Thus it is assumed that all rows (reaches) in each source database are parallel and refer to the same reaches.
+    # of items in the new db = # of items in any one source db (should be the same)
 
 You can edit the config with your database paths and desired columns and run this script.
 
@@ -14,21 +14,17 @@ Evan Hackstadt
 July 2025
 """
 
-# TODO:
-# - connect lookup tables to correct features in the new db
-
-
-
 import sqlite3
 
 # --- CONFIGURATION ---
 
-# List your source databases
+# List your source databases and define shorthand labels for each
 source_dbs = [
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Lower-Siletz-River-1710020407/BRAT-LSR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Middle-Siletz-River-1710020405/BRAT-MSR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Upper-Siletz-River-1710020404/BRAT-USR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Rock-Creek-1710020406/BRAT-RC-2025/outputs/brat.gpkg'
+
+]
+
+source_dbs_labels = [   # e.g. ['FIS1', 'FIS2', ... ]
+
 ]
 
 # Name of the table to extract from in each source database
@@ -36,35 +32,16 @@ source_table = 'ReachAttributes'
 
 # Columns to copy (must exist in all source tables)
 columns_to_copy = [
-    'WatershedID',
-    'iGeo_Slope', 
-    'iVeg100EX', 'iVeg_30EX',
-    'iVeg100HPE', 'iVeg_30HPE',
-    'iHyd_Qlow', 'iHyd_Q2',
-    'iHyd_SPlow', 'iHyd_SP2',
-    'oVC_EX', 'oVC_HPE',
-    'oCC_EX', 'oCC_HPE',
-    'mCC_EX_CT', 'mCC_HPE_CT',
-    'LimitationID', 'RiskID', 'OpportunityID',
-    'mCC_HisDep'
+    'oVC_EX',
+    'oCC_EX'
     ]  # <-- edit as needed
 
-# Lookup tables to copy (should correspond to the columns above; should be identical in all source databases)
-lookup_tables_to_copy = [
-    'Watersheds',
-    'DamLimitations',
-    'DamRisks',
-    'DamOpportunities',
-    'DamCapacities'
-]
-
 # Name of the new database and table
-new_db = 'brat-all-siletz-custom.db'
+new_db = 'brat-all-siletz.db'
 new_table = 'CombinedOutputs'
 
 # Add a column to track the source database?
 track_source = True
-
 
 # --- SCRIPT STARTS HERE ---
 

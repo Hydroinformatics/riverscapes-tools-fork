@@ -36,14 +36,16 @@ def analyze(database, out_dir):
 
     # > Call analysis functions. Can turn these on or off
 
-    hydro_limitation(database, out_dir)
 
     suitability_distribution(database, out_dir)
     input_distributions(database, out_dir)
-    capacity_distribution(database, out_dir)
+    output_distribution(database, out_dir)
     capacity_scatter_plots(database, out_dir)
     capacity_scatter_plots_zoomed(database, out_dir)
+    hydro_limitation(database, out_dir)
     # capacity_bar_plots(database, out_dir)
+
+    print("Analysis complete.")
 
 
 def suitability_distribution(database, out_dir):
@@ -68,7 +70,7 @@ def suitability_distribution(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}-hist.png".format(var))
+            out_file_path = os.path.join(out_dir, "suitability-distribution-{}.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -85,10 +87,10 @@ def input_distributions(database, out_dir):
     x_vars = [
         # ('var name', 'description', num_bins, x_scalar)
         # note: set x_scalar to 1.00 if you want the full histogram
-        ('iHyd_SPLow', 'Baseflow (watts)', 250, 0.05),
-        ('iHyd_SP2', 'Peak Flow (watts)', 250, 0.05),
-        ('iGeo_Slope', 'Stream Slope', 250, 0.75),
-        ('iGeo_DA', 'Upstream Drainage Area (sq km)', 250, 0.05)
+        ('iHyd_SPLow', 'Baseflow (watts)', 50, 1.00),
+        ('iHyd_SP2', 'Peak Flow (watts)', 50, 0.5),
+        ('iGeo_Slope', 'Stream Slope', 50, 1.00),
+        ('iGeo_DA', 'Upstream Drainage Area (sq km)', 50, 0.005)
     ]
 
     capacity_data = select_var(database, 'oCC_EX')
@@ -108,7 +110,7 @@ def input_distributions(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}-hist-{}bin.png".format(num_bins))
+            out_file_path = os.path.join(out_dir, "input-distribution-{}.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -122,26 +124,26 @@ def input_distributions(database, out_dir):
             plt.hist(filtered_pairs.keys(), bins=num_bins)
             plt.xlabel(descr)
             plt.ylabel('Count')
-            plt.title("[subset] Distribution of {} at Frequent/Pervasiv reaches".format(var))
+            plt.title("[subset] Distribution of {} at Frequent/Pervasive reaches".format(var))
             print("...{}-bin histogram for {} generated...".format(num_bins, var))
 
             if out_dir is not None:
                 print(f"...Saving plot to output dir...")
-                out_file_path = os.path.join(os.path.dirname(out_dir), "{}-hist-{}bin-zoomed.png".format(var, num_bins))
+                out_file_path = os.path.join(out_dir, "input-distribution-{}-zoomed.png".format(var))
                 plt.savefig(out_file_path)
                 plt.close()
             else:
                 plt.show()
 
 
-def capacity_distribution(database, out_dir):
+def output_distribution(database, out_dir):
     """
     Generate two histograms of the dam capacities, one with few bins and one with many
     :param database: path to a BRAT database (.gpkg)
     :param out_dir: optional path to a folder to save plots to
     """
 
-    histogram_bin_counts = [4, 12, 100, 250]
+    histogram_bin_counts = [4, 12, 24, 50]
     capacity_data = select_var(database, 'oCC_EX')
 
     for num_bins in histogram_bin_counts:
@@ -153,7 +155,7 @@ def capacity_distribution(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "oCC_EX-hist-{}bin.png".format(num_bins))
+            out_file_path = os.path.join(out_dir, "output-distribution-{}bin.png".format(num_bins))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -195,7 +197,7 @@ def capacity_scatter_plots(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}.png".format(var))
+            out_file_path = os.path.join(out_dir, "scatter-{}.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -237,7 +239,7 @@ def capacity_scatter_plots_zoomed(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}-zoomed.png".format(var))
+            out_file_path = os.path.join(out_dir, "scatter-{}-zoomed.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -296,7 +298,7 @@ def capacity_bar_plots(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}.png".format(var))
+            out_file_path = os.path.join(out_dir, "bar-{}.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:
@@ -320,23 +322,23 @@ def hydro_limitation(database, out_dir):
         'iHyd_SP2': 'Peakflow stream power (watts)',
         'iGeo_Slope': 'Stream Slope'
     }
-    categories = {  # var: [ {label, min, max}, ... ]
+    categories = {  # var: [ {label, color, min, max}, ... ]
         'iHyd_SPlow': [
-            {'label': 'Can build', 'min': 0, 'max': 160},
-            {'label': 'Probably can build', 'min': 160, 'max': 185},
-            {'label': 'Cannot build', 'min': 185}
+            {'label': 'Can build', 'color': 'b', 'min': 0, 'max': 160},
+            {'label': 'Probably can build', 'color': 'y', 'min': 160, 'max': 185},
+            {'label': 'Cannot build', 'color': 'r', 'min': 185}
         ],
         'iHyd_SP2': [
-            {'label': 'Persists', 'min': 0, 'max': 1100},
-            {'label': 'Occasional Breach', 'min': 1100, 'max': 1400},
-            {'label': 'Occasional Blowout', 'min': 1400, 'max': 2200},
-            {'label': 'Blowout', 'min': 2200}
+            {'label': 'Persists', 'color': 'b', 'min': 0, 'max': 1100},
+            {'label': 'Occasional Breach', 'color': 'g', 'min': 1100, 'max': 1400},
+            {'label': 'Occasional Blowout', 'color': 'y', 'min': 1400, 'max': 2200},
+            {'label': 'Blowout', 'color': 'r', 'min': 2200}
         ],
         'iGeo_Slope': [
-            {'label': 'Flat', 'min': 0, 'max': 0.0026},
-            {'label': 'Can build', 'min': 0.0026, 'max': 0.135},
-            {'label': 'Probably can build', 'min': 0.135, 'max': 0.20},
-            {'label': 'Cannot build', 'min': 0.20, 'max': 1}
+            {'label': 'Flat', 'color': 'c', 'min': 0, 'max': 0.0026},
+            {'label': 'Can build', 'color': 'b', 'min': 0.0026, 'max': 0.135},
+            {'label': 'Probably can build', 'color': 'g', 'min': 0.135, 'max': 0.20},
+            {'label': 'Cannot build', 'color': 'r', 'min': 0.20, 'max': 1}
         ]
     }
 
@@ -350,26 +352,40 @@ def hydro_limitation(database, out_dir):
     for i in range(len(oCC_EX)):
         if oCC_EX[i] != oVC_EX[i]:
             num_diff += 1
-    print("> Of {} reaches, {} ({} percent) had their suitability limited by hydrology in Combined FIS".format(len(oCC_EX), num_diff, round(100*num_diff/len(oCC_EX), 2)))
+    perc_diff = round(100 * num_diff / len(oCC_EX), 2)
+    print("> Of {} reaches, {} ({} percent) had their suitability limited by hydrology in Combined FIS".format(len(oCC_EX), num_diff, perc_diff))
+
+    plt.pie([num_diff, len(oCC_EX) - num_diff], labels=['Limited by Hydrology', 'Not Limited by Hydrology'], autopct='%1.1f%%')
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "hydro-limit-pie.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
 
     # Generate color-coded oVC vs. oCC scatters to identify clusters & limiting factors
     print("Generating color-coded scatters:")
-    for var, cat_list in categories.items():
+    for var, var_cat_list in categories.items():
         var_data = select_var(database, var)
+        colors = []
 
         # for each value, replace it with the correct category label
-        for i in range(var_data):
-            for cat in cat_list:
-                label = cat[label]
-                min = cat[min] if min in cat else None
-                max = cat[max] if max in cat else None
+        for i in range(len(var_data)):
+            for cat in var_cat_list:
+                label = cat['label']
+                min = cat['min'] if 'min' in cat else None
+                max = cat['max'] if 'max' in cat else None
+                if (min is None or var_data[i] >= min) and (max is None or var_data[i] < max):
+                    var_data[i] = label
+                    colors.append(cat['color'])
+                    break
 
-
-
-
-        
         # generate a plot
-        plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=var_data, )
+        plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=colors, alpha=0.5)
+        for cat in var_cat_list:
+            plt.scatter([], [], c=cat['color'], label=cat['label'])
+        plt.legend(title=f'{var} Categories')
         plt.xlabel('oVC_EX (Veg FIS Capacity)')
         plt.ylabel("oCC_EX (Overall FIS Capacity)")
         plt.title(f"Veg Capacity vs. Overall Capacity - {var}")
@@ -377,26 +393,7 @@ def hydro_limitation(database, out_dir):
 
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-    # Print bar charts counting reaches in each baseflow, peakflow, and slope category based on their FIS cutoffs
-    print("...Generating hydrology histograms corresponding to rule cutoffs")
-
-    for var, bins_seq, bin_labels in standard_cutoffs:
-        var_data = select_var(database, var)
-        plt.hist(var_data, bins=bins_seq, edgecolor='black', label=bin_labels)
-        plt.xlabel(x_vars[var])
-        plt.ylabel("Count")
-        plt.title("Distribution of {} within FIS rule cutoffs".format(var))
-        print("...Cutoff histogram for {} generated...".format(var))
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(os.path.dirname(out_dir), "{}_cutoffs_hist.png".format(var))
+            out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
             plt.savefig(out_file_path)
             plt.close()
         else:

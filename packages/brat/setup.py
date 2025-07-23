@@ -39,6 +39,7 @@ setup(name='sqlbrat',
       packages=[
           'sqlbrat',
           'sqlbrat.utils',
-          'sqlbrat.validation'
+          'sqlbrat.validation',
+          'analysis'    # added for FIS sensitivity analysis. feel free to remove.
       ]
       )
