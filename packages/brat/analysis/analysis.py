@@ -310,35 +310,29 @@ def capacity_bar_plots(database, out_dir):
 def hydro_limitation(database, out_dir):
     """
     Analyze how hydro parameters (baseflow, peakflow, slope) limited the vegetative capacity.
-    Reports # and % of reaches limited; generates colored scatters; generates cutoff-based histograms
     :param database: path to a BRAT database (.gpkg)
     :param out_dir: optional path to a folder to save plots to
     """
 
     # Hydrologic variables of interest (inputs into the Combined FIS)
 
-    x_vars = {
-        'iHyd_SPlow': 'Baseflow stream power (watts)',
-        'iHyd_SP2': 'Peakflow stream power (watts)',
-        'iGeo_Slope': 'Stream Slope'
-    }
     categories = {  # var: [ {label, color, min, max}, ... ]
         'iHyd_SPlow': [
-            {'label': 'Can build', 'color': 'b', 'min': 0, 'max': 160},
-            {'label': 'Probably can build', 'color': 'y', 'min': 160, 'max': 185},
+            {'label': 'Can build', 'color': '0.6', 'min': 0, 'max': 160},
+            {'label': 'Probably can build', 'color': 'g', 'min': 160, 'max': 185},
             {'label': 'Cannot build', 'color': 'r', 'min': 185}
         ],
         'iHyd_SP2': [
-            {'label': 'Persists', 'color': 'b', 'min': 0, 'max': 1100},
-            {'label': 'Occasional Breach', 'color': 'g', 'min': 1100, 'max': 1400},
-            {'label': 'Occasional Blowout', 'color': 'y', 'min': 1400, 'max': 2200},
+            {'label': 'Persists', 'color': '0.8', 'min': 0, 'max': 1100},
+            {'label': 'Occasional Breach', 'color': 'b', 'min': 1100, 'max': 1400},
+            {'label': 'Occasional Blowout', 'color': 'g', 'min': 1400, 'max': 2200},
             {'label': 'Blowout', 'color': 'r', 'min': 2200}
         ],
         'iGeo_Slope': [
-            {'label': 'Flat', 'color': 'c', 'min': 0, 'max': 0.0026},
-            {'label': 'Can build', 'color': 'b', 'min': 0.0026, 'max': 0.135},
+            {'label': 'Flat', 'color': 'b', 'min': 0, 'max': 0.0026},
+            {'label': 'Can build', 'color': '0.8', 'min': 0.0026, 'max': 0.135},
             {'label': 'Probably can build', 'color': 'g', 'min': 0.135, 'max': 0.20},
-            {'label': 'Cannot build', 'color': 'r', 'min': 0.20, 'max': 1}
+            {'label': 'Cannot build', 'color': 'r', 'min': 0.20}
         ]
     }
 
@@ -376,19 +370,22 @@ def hydro_limitation(database, out_dir):
                 label = cat['label']
                 min = cat['min'] if 'min' in cat else None
                 max = cat['max'] if 'max' in cat else None
-                if (min is None or var_data[i] >= min) and (max is None or var_data[i] < max):
+                if (min is None or var_data[i] >= min) and (max is None or var_data[i] <= max):
+                    # if not hydro limited, reduce alpha
+                    # alpha = 0.001 if oCC_EX[i] == oVC_EX[i] else 1.0
+                    colors.append('w' if oCC_EX[i] == oVC_EX[i] else cat['color'])
+                    # replace data with category
                     var_data[i] = label
-                    colors.append(cat['color'])
                     break
 
         # generate a plot
         plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=colors, alpha=0.5)
         for cat in var_cat_list:
             plt.scatter([], [], c=cat['color'], label=cat['label'])
-        plt.legend(title=f'{var} Categories')
+        plt.legend(title=f'{var} Categorization')
         plt.xlabel('oVC_EX (Veg FIS Capacity)')
-        plt.ylabel("oCC_EX (Overall FIS Capacity)")
-        plt.title(f"Veg Capacity vs. Overall Capacity - {var}")
+        plt.ylabel("oCC_EX (Combined FIS Capacity)")
+        plt.title(f"Overall Capacity that differs from Veg Capacity, ({var})")
         print(f"...Plot for {var} generated...")
 
         if out_dir is not None:
