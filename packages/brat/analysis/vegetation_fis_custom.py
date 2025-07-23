@@ -4,17 +4,15 @@ This script is meant to be imported into brat.py and called in place of vegetati
 A similar version is provided for the combined FIS.
 
 Much of the code is copied from the original vegetation_fis.py, credits:
-Jordan Gilbert
-Philip Bailey
+    Jordan Gilbert
+    Philip Bailey
 
 Evan Hackstadt
 July 2025
 """
 
 # TODO:
-# extra parameter to specify adjustment for SA
 # ~write additional column to the database specifying the adjustment~ DO THIS IN BRAT.PY, NOT HERE
-# add FIS visualization code from other script
 
 
 
@@ -24,22 +22,22 @@ import argparse
 import traceback
 import numpy as np
 import skfuzzy as fuzz
+import matplotlib.pyplot as plt
 from skfuzzy import control as ctrl
 from rscommons import Logger, ProgressBar, dotenv
 from rscommons.database import load_attributes, load_dgo_attributes
 from rscommons.database import write_db_attributes, write_db_dgo_attributes
 
 
-adjustment_types = {
-    'scale': 'L',
-    'shape': 'P'
-}
-# Acceptable adjustment values:
+adjustment_types = ['scale', 'shape']
+'''Acceptable adjustment values:
     # scale: a float value representing the scaling factor (e.g., 0.5 for compression, 2 for stretching)
     # shape: must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
+'''
 
 
-def vegetation_fis(database: str, label: str, veg_type: str, dgo: bool = None, adjustment_type: str = None, adjustment_value: float = 1.0):
+def vegetation_fis(database: str, label: str, veg_type: str, dgo: bool = None, 
+                   adjustment_type: str = None, adjustment_value: float = 1.0):
     """Calculate vegetation suitability for each reach in a BRAT
     SQLite database
 
@@ -47,12 +45,14 @@ def vegetation_fis(database: str, label: str, veg_type: str, dgo: bool = None, a
         database {str} -- Path to BRAT SQLite database
         label {str} -- Either 'historic' or 'existing'. Only used for lof messages.
         veg_type {str} -- Prefix either 'EX' for existing or 'HPE' for historic
+        adjustment_type {str} -- Type of adjustment to apply ('scale' or 'shape')
+        adjustment_value {float} -- Value for the adjustment (e.g., scaling factor)
     """
 
     # handle adjustments
     if adjustment_type:
-        if adjustment_type not in adjustment_types.keys():
-            raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types.keys()}.")
+        if adjustment_type not in adjustment_types:
+            raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
         if adjustment_value <= 0:
             raise ValueError(f"Invalid adjustment value: {adjustment_value}. Must be greater than 0.")
         if adjustment_type == 'shape':
@@ -87,14 +87,15 @@ def vegetation_fis(database: str, label: str, veg_type: str, dgo: bool = None, a
 
 
 # custom Veg FIS function that allows for sensitivity analysis adjustments
-def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str, riparian_field: str, out_field: str, adj_type: str, scale: float):
+def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str, riparian_field: str, out_field: str,
+                                    adj_type: str, adj_val: float):
     """
     Adjustable beaver dam capacity vegetation FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
     :param streamside_field: Name of the feature streamside vegetation attribute
     :param riparian_field: Name of the riparian vegetation attribute
-    :param adj_type: Type of adjustment to apply ('scale-compress', 'scale-stretch', 'shape')
-    :param adj_val: Value for the adjustment (e.g., scaling factor)
+    :param adj_type: Type of adjustment to apply ('scale' or 'shape')
+    :param adj_val: Value for the adjustment (scaling factor)
     """
 
     log = Logger('Vegetation FIS')
@@ -123,31 +124,60 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     density = ctrl.Consequent(np.arange(0, 45, 0.01), 'result')     # do not adjust output!
 
     # build membership functions for each antecedent and consequent object --- apply adjustments here
-    # we do not scale the tops of the triangle MFs since that would shift them
+    
+    # we do NOT adjust density
+    density['none'] = fuzz.trimf(density.universe, [0, 0, 0.1])
+    density['rare'] = fuzz.trapmf(density.universe, [0, 0.1, 0.5, 1.5])
+    density['occasional'] = fuzz.trapmf(density.universe, [0.5, 1.5, 4, 8])
+    density['frequent'] = fuzz.trapmf(density.universe, [4, 8, 12, 25])
+    density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
 
-    if adj_type != 'shape':
-        # ORIGINAL SHAPES
-        riparian['unsuitable'] = fuzz.trapmf(riparian.universe, [0, 0, 0.1*scale, 1*scale])
-        riparian['barely'] = fuzz.trimf(riparian.universe, [0.1*scale, 1, 2*scale])
-        riparian['moderately'] = fuzz.trimf(riparian.universe, [1*scale, 2, 3*scale])
-        riparian['suitable'] = fuzz.trimf(riparian.universe, [2*scale, 3, 4*scale])
-        riparian['preferred'] = fuzz.trimf(riparian.universe, [3*scale, 4, 4*scale])
-
-        streamside['unsuitable'] = fuzz.trapmf(streamside.universe, [0, 0, 0.1*scale, 1*scale])
-        streamside['barely'] = fuzz.trimf(streamside.universe, [0.1*scale, 1, 2*scale])
-        streamside['moderately'] = fuzz.trimf(streamside.universe, [1*scale, 2, 3*scale])
-        streamside['suitable'] = fuzz.trimf(streamside.universe, [2*scale, 3, 4*scale])
-        streamside['preferred'] = fuzz.trimf(streamside.universe, [3*scale, 4, 4*scale])
-
-        density['none'] = fuzz.trimf(density.universe, [0, 0, 0.1])
-        density['rare'] = fuzz.trapmf(density.universe, [0, 0.1, 0.5, 1.5])
-        density['occasional'] = fuzz.trapmf(density.universe, [0.5, 1.5, 4, 8])
-        density['frequent'] = fuzz.trapmf(density.universe, [4, 8, 12, 25])
-        density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
+    if adj_type == 'scale':
+        # scaling equations:
+        #   triangles (a,b,c)
+        #       x-axis bisector = (a+c) / 2
+        #       a = x-axis bisector - ((x-axis bisector - a) * scalefactor)
+        #       c = x-axis bisector + ((c - x-axis bisector) * scalefactor)
+        #   trapezoids (a,b,c,d)
+        #       a = b - ((b-a) * scalefactor)
+        #       d = c + ((d-c) * scalefactor)
         
+        # scale trapezoids
+        a0, b0, c0, d0 = 0, 0, 0.1, 1   # from standard MFs
+        a1 = b0 - ((b0 - a0) * adj_val)
+        d1 = c0 + ((d0 - c0) * adj_val)     # we do not change top (b or c)
+        riparian['unsuitable'] = fuzz.trapmf(riparian.universe, [a1, b0, c0, d1])
+        streamside['unsuitable'] = fuzz.trapmf(streamside.universe, [a1, b0, c0, d1])
+        
+        # scale triangles iteratively
+        tri_centers = {     # from standard MFs
+            'barely': [0.1, 1, 2],
+            'moderately': [1, 2, 3], 
+            'suitable': [2, 3, 4],
+            'preferred': [3, 4, 4]
+        }
+        for cat, abc in tri_centers.items():
+            bisect = (abc[0] + abc[2]) / 2
+            b = abc[1]  # we do not change the top of the triangle since we don't want to shift
+            a = bisect - ((bisect - abc[0]) * adj_val)
+            c = bisect -((abc[2] - bisect) * adj_val)
+            riparian[cat] = fuzz.trimf(riparian.universe, a, b, c)
+            streamside[cat] = fuzz.trimf(streamside.universe, a, b, c)  # MFs are identical
+
     elif adj_type == 'shape':
         log.info("Running custom-defined MF shapes.")
-        # CUSTOM SHAPES - currently, trap->gbell and tri->gauss
+        # CUSTOM SHAPES DEFINED HERE
+        riparian['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
+        riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
+        riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
+        riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
+        riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
+
+        streamside['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
+        streamside['barely'] = fuzz.gaussmf(streamside.universe, 1, .4)
+        streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
+        streamside['suitable'] = fuzz.gaussmf(streamside.universe, 3, .4)
+        streamside['preferred'] = fuzz.gaussmf(streamside.universe, 4, .4)
 
     
 
@@ -214,8 +244,39 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         progbar.update(counter)
 
     progbar.finish()
-    log.info('Done')
+    log.info('Custom Veg FIS Done')
+    
+    '''VISUALIZE MEMBERSHIP FUNCTIONS'''
+    log.info('Visualizing Adjusted MFs...')
+    
+    # Riparian
+    for label, color in zip(list(riparian.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
+        plt.plot(riparian.universe, riparian.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
+    plt.xlabel('Riparian (100m) Suitability')
+    plt.ylabel('Membership')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
 
+    # Streamside
+    for label, color in zip(list(streamside.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
+        plt.plot(streamside.universe, streamside.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
+    plt.xlabel('Streamside (30m) Suitability')
+    plt.ylabel('Membership')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
+
+    # Density
+    fig, axs = plt.subplots(1, 1, figsize=(12, 4))
+    for label, color in zip(list(density.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
+        axs.plot(density.universe, density.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
+    plt.xlabel('Dam Capacity from Vegetation FIS')
+    plt.ylabel('Membership')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    
 
 
 
@@ -337,7 +398,6 @@ def calculate_vegegtation_fis(feature_values: dict, streamside_field: str, ripar
 
     progbar.finish()
     log.info('Done')
-
 
 
 def main():
