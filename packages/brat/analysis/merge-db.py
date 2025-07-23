@@ -49,7 +49,7 @@ lookup_tables_to_copy = [
 ]
 
 # Name of the new database and table
-new_db = 'brat-all-siletz.db'
+new_db = 'brat-all-siletz-custom.db'
 new_table = 'CombinedOutputs'
 
 # Add a column to track the source database?
