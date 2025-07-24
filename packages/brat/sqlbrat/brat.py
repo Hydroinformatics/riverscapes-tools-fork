@@ -37,6 +37,8 @@ from sqlbrat.utils.dam_reach_type import dam_reach_type
 from sqlbrat.brat_report import BratReport
 from sqlbrat.__version__ import __version__
 
+from analysis import vegetation_fis_custom, combined_fis_custom
+
 Path = str
 
 initGDALOGRErrors()
@@ -436,7 +438,8 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         [vegetation_suitability(outputs_gpkg_path, buffer, prefix, ecoregion) for buffer in get_stream_buffers(outputs_gpkg_path)]
 
         # Run the vegetation and then combined FIS for this epoch
-        vegetation_fis(outputs_gpkg_path, epoch, prefix)
+        # vegetation_fis(outputs_gpkg_path, epoch, prefix)
+        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix)
         combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
