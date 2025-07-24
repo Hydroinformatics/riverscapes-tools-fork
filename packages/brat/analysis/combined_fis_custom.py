@@ -184,9 +184,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     elif adj_type == 'scale':
         # scaling equations:
             #   triangles (a,b,c)
-            #       x-axis bisector = (a+c)/2
-            #       a = x-axis bisector - ((x-axis bisector - a) * scalefactor)
-            #       b = x-axis bisector + ((b - x-axis bisector) * scalefactor)
+            #       a = b - ((b - a) * scalefactor)
+            #       c = b + ((c - b) * scalefactor)
+            #       even though the triangle may not be isosceles, we use b to yield consistent MF intersection
             #   trapezoids (a,b,c,d)
             #       a = b - ((b-a) * scalefactor)
             #       d = c + ((d-c) * scalefactor)
@@ -230,10 +230,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         # scale triangles iteratively
         for cat, abc in sp2_triangles.items():
             scale = adj_vals[0]
-            bisect = (abc[0] + abc[2]) / 2
             b = abc[1]
-            a = bisect - ((bisect - abc[0]) * scale)
-            c = bisect -((abc[2] - bisect) * scale)
+            a = b - ((b - abc[0]) * scale)
+            c = b -((abc[2] - b) * scale)
             sp2[cat] = fuzz.trimf(sp2.universe, [a, b, c])
         
     elif adj_type == 'shape':

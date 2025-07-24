@@ -135,9 +135,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     if adj_type == 'scale':
         # scaling equations:
         #   triangles (a,b,c)
-        #       x-axis bisector = (a+c) / 2
-        #       a = x-axis bisector - ((x-axis bisector - a) * scalefactor)
-        #       c = x-axis bisector + ((c - x-axis bisector) * scalefactor)
+        #       a = b - ((b - a) * scalefactor)
+        #       c = b + ((c - b) * scalefactor)
+        #       even though the triangle may not be isosceles, we use b to yield consistent MF intersection
         #   trapezoids (a,b,c,d)
         #       a = b - ((b-a) * scalefactor)
         #       d = c + ((d-c) * scalefactor)
@@ -157,10 +157,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
             'preferred': [3, 4, 4]
         }
         for cat, abc in tri_centers.items():
-            bisect = (abc[0] + abc[2]) / 2
-            b = abc[1]  # we do not change the top of the triangle since we don't want to shift
-            a = bisect - ((bisect - abc[0]) * adj_val)
-            c = bisect -((abc[2] - bisect) * adj_val)
+            b = abc[1]      # we do not change the top of the triangle since we don't want to shift
+            a = b - ((b - abc[0]) * adj_val)
+            c = b -((abc[2] - b) * adj_val)
             riparian[cat] = fuzz.trimf(riparian.universe, a, b, c)
             streamside[cat] = fuzz.trimf(streamside.universe, a, b, c)  # MFs are identical
 
