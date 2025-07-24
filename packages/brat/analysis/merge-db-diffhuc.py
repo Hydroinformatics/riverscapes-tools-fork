@@ -1,8 +1,11 @@
 """
 Merges standard BRAT databases (.gpkg) of the SAME MODEL, on DIFFERENT REGIONS.
     All entries (rows) of each database will be collected ("stacked") together in the new db.
-    Thus it is assumed that all rows (reaches) in each source database are unique.
-    # of items in the new db = sum of items in all source dbs
+    Assumptions:
+        all rows (reaches) in each source database are unique.
+        all columns to copy exist in each source database.
+    Result:
+        # of items in the new db = sum of items in all source dbs
 
 You can edit the config with your database paths and desired columns and run this script.
 
