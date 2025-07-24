@@ -15,15 +15,16 @@ July 2025
 """
 
 import sqlite3
+import os
 
 # --- CONFIGURATION ---
 
-# List your source databases and define shorthand labels for each
+# List your source databases and define shorthand labels for each       # SET THIS
 source_dbs = [
 
 ]
 
-source_dbs_labels = [   # e.g. ['FIS1', 'FIS2', ... ]
+source_dbs_labels = [   # e.g. ['FIS1', 'FIS2', ... ]                   # SET THIS
 
 ]
 
@@ -31,79 +32,66 @@ source_dbs_labels = [   # e.g. ['FIS1', 'FIS2', ... ]
 source_table = 'ReachAttributes'
 
 # Columns to copy (must exist in all source tables)
-columns_to_copy = [
+columns_to_copy_once = [    # ReachIDs should be equal in all source tables
+    'ReachID',
+    'WatershedID'
+]
+columns_to_copy_each = [    # model outputs to compare between runs
     'oVC_EX',
     'oCC_EX'
-    ]  # <-- edit as needed
+]
 
 # Name of the new database and table
-new_db = 'brat-all-siletz.db'
-new_table = 'CombinedOutputs'
+new_db = 'brat-all-fis.db'
+new_db_path = ''                        # SET THIS
+new_table_name = 'CombinedOutputs'
 
 # Add a column to track the source database?
 track_source = True
 
+
+
 # --- SCRIPT STARTS HERE ---
 
 # Create the new database and table
+new_db_path = os.path.join(new_db_path, new_db)
 conn = sqlite3.connect(new_db)
 cur = conn.cursor()
 
 # Drop tables if they exists (for repeatable runs)
-cur.execute(f"DROP TABLE IF EXISTS {new_table}")
-for table in lookup_tables_to_copy:
-    cur.execute(f"DROP TABLE IF EXISTS {table}")
-
-# First copy lookup tables — only need to do this from one source database since identical
-if lookup_tables_to_copy:
-    print("Copying lookup tables...")
-    src_conn = sqlite3.connect(source_dbs[0])
-    src_cur = src_conn.cursor()
-    
-    for table in lookup_tables_to_copy:
-        print(f"Copying {table}...")
-        src_cur.execute(f"SELECT * FROM {table}")
-        rows = src_cur.fetchall()
-        col_names = [description[0] for description in src_cur.description]
-        
-        # Create the table in the new database
-        col_defs = ', '.join([f"{col} TEXT" for col in col_names])  # Assuming TEXT for simplicity
-        create_stmt = f"CREATE TABLE {table} ({col_defs})"
-        cur.execute(create_stmt)
-        
-        # Insert data into the new table
-        placeholders = ', '.join(['?'] * len(col_names))
-        insert_stmt = f"INSERT INTO {table} ({', '.join(col_names)}) VALUES ({placeholders})"
-        cur.executemany(insert_stmt, rows)
-        
-        print(f"Inserted {len(rows)} rows into {table}")
-    
-    src_conn.close()
+cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
 
 
 # Build CREATE TABLE statement
-col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Use REAL for numeric, change as needed
+col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy_once])  # Use REAL for numeric, change as needed
 if track_source:
     col_defs += ', SourceDB TEXT'
-create_stmt = f"CREATE TABLE {new_table} ({col_defs})"
+# Dynamically add output columns for each source db
+for col in columns_to_copy_each:
+    for label in source_dbs_labels:
+        col_defs += f", {col}_{label} REAL"
+create_stmt = f"CREATE TABLE {new_table_name} ({col_defs})"
 cur.execute(create_stmt)
 conn.commit()
+
+# TODO --- update script below!
+
 
 # For each source database, copy the data
 for db in source_dbs:
     print(f"Processing {db}...")
     src_conn = sqlite3.connect(db)
     src_cur = src_conn.cursor()
-    col_list = ', '.join(columns_to_copy)
+    col_list = ', '.join(columns_to_copy_each)
     src_cur.execute(f"SELECT {col_list} FROM {source_table}")
     rows = src_cur.fetchall()
     # Prepare insert statement
     placeholders = ', '.join(['?'] * len(columns_to_copy))
     if track_source:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
+        insert_stmt = f"INSERT INTO {new_table_name} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
         data = [row + (db,) for row in rows]
     else:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}) VALUES ({placeholders})"
+        insert_stmt = f"INSERT INTO {new_table_name} ({col_list}) VALUES ({placeholders})"
         data = rows
     cur.executemany(insert_stmt, data)
     src_conn.close()
