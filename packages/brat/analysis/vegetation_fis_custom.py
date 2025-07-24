@@ -11,10 +11,6 @@ Evan Hackstadt
 July 2025
 """
 
-# TODO:
-# ~write additional column to the database specifying the adjustment~ DO THIS IN BRAT.PY, NOT HERE
-
-
 
 import os
 import sys
@@ -36,7 +32,7 @@ adjustment_types = ['scale', 'shape']
 '''
 
 
-def vegetation_fis(database: str, label: str, veg_type: str, dgo: bool = None, 
+def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = None, 
                    adjustment_type: str = None, adjustment_value: float = 1.0):
     """Calculate vegetation suitability for each reach in a BRAT
     SQLite database
@@ -413,8 +409,8 @@ def main():
     logg.setup(logPath=logfile, verbose=args.verbose)
 
     try:
-        # vegetation_fis(args.network.name, 'historic', 'HPE')
-        vegetation_fis(args.database.name, 'existing', 'EX')
+        # vegetation_fis_custom(args.network.name, 'historic', 'HPE')
+        vegetation_fis_custom(args.database.name, 'existing', 'EX')
 
     except Exception as ex:
         logg.error(ex)

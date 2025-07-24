@@ -37,7 +37,9 @@ from sqlbrat.utils.dam_reach_type import dam_reach_type
 from sqlbrat.brat_report import BratReport
 from sqlbrat.__version__ import __version__
 
-from analysis import vegetation_fis_custom, combined_fis_custom
+''' FIS Sensitivity Analysis '''
+from analysis.vegetation_fis_custom import vegetation_fis_custom
+from analysis.combined_fis_custom import combined_fis_custom
 
 Path = str
 
@@ -432,19 +434,48 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_drainage_area = None
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (6 lines)'''
+    veg_adjustment_type = None
+    veg_adjustment_value = None
+    cmb_adjustment_type = None
+    cmb_adjustment_values = None
+    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED: type = {veg_adjustment_type}, value = {veg_adjustment_value}')
+    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED: type = {cmb_adjustment_type}, values = {cmb_adjustment_values}')
+
     for epoch, prefix, ltype, orig_id in Epochs:
 
         # Calculate the vegetation suitability for each buffer
         [vegetation_suitability(outputs_gpkg_path, buffer, prefix, ecoregion) for buffer in get_stream_buffers(outputs_gpkg_path)]
 
         # Run the vegetation and then combined FIS for this epoch
+
+        ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (4 lines)'''
         # vegetation_fis(outputs_gpkg_path, epoch, prefix)
-        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix)
-        combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
+        # combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
+        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, veg_adjustment_type, veg_adjustment_value)
+        combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, cmb_adjustment_type, cmb_adjustment_values)
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
         _veg_suit_raster_node, veg_suit_raster = project.add_project_raster(proj_nodes['Intermediates'], LayerTypes[ltype], None, True)
         output_vegetation_raster(outputs_gpkg_path, orig_raster, veg_suit_raster, epoch, prefix, ecoregion)
+
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (15 lines)'''
+    # Record type of FIS SA adjustment in a separate table just for records
+    with SQLiteCon(outputs_gpkg_path) as database:
+        log.info('Recording adjustments...')
+        create_stmt = "CREATE TABLE FISAdjustments (FIS, MF, Adj_Type TEXT, Adj_Val REAL)"
+        database.curs.execute(create_stmt)
+        # insert
+        adjustment_data = [
+            ["Vegetation FIS", "Riparian Suitability", f"{veg_adjustment_type}", veg_adjustment_value],
+            ["Vegetation FIS", "Streamside Suitability", f"{veg_adjustment_type}", veg_adjustment_value],
+            ["Combined FIS", "SP2", f"{cmb_adjustment_type}", cmb_adjustment_values[0]],
+            ["Combined FIS", "SPlow", f"{cmb_adjustment_type}", cmb_adjustment_values[1]],
+            ["Combined FIS", "Slope", f"{cmb_adjustment_type}", cmb_adjustment_values[2]],
+        ]
+        for row in adjustment_data:
+            database.curs.execute(f'INSERT INTO FISAdjustments VALUES {row}')
+    
 
     # Calculate departure from historical conditions
     with SQLiteCon(outputs_gpkg_path) as database:

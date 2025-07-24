@@ -36,7 +36,7 @@ adjustment_types = ['shift', 'scale', 'shape']
 '''
 
 
-def combined_fis(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
+def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
                  adjustment_type: str = None, adjustment_values: list = None):
     """
     Combined beaver dam capacity FIS
@@ -683,8 +683,8 @@ def main():
     logg.setup(logPath=logfile, verbose=args.verbose)
 
     try:
-        combined_fis(args.database.name, 'existing', 'EX', args.maxdrainage)
-        # combined_fis(args.network.name, 'historic', 'HPE', args.maxdrainage)
+        combined_fis_custom(args.database.name, 'existing', 'EX', args.maxdrainage)
+        # combined_fis_custom(args.network.name, 'historic', 'HPE', args.maxdrainage)
 
     except Exception as ex:
         logg.error(ex)
