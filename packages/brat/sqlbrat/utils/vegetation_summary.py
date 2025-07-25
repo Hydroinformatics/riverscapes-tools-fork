@@ -49,9 +49,32 @@ def vegetation_summary(outputs_gpkg_path: str, label: str, veg_raster: str, buff
         for feature, _counter, _progbar in lyr.iterate_features(label):
             reach_id = feature.GetFID()
             geom = feature.GetGeometryRef()
+            
+            ''' DEBUGGING '''
+            log.info(f"Processing ReachID {reach_id}")
+            log.info(f"Geometry WKT: {geom.ExportToWkt()}")
+            log.info(f"Source SRS: {lyr.spatial_ref.ExportToWkt()}")
+            log.info(f"Raster CRS: {src.crs}")
+
+            if transform is None:
+                log.error("No coordinate transform was created! Buffering will fail.")
+                continue
+            try:
+                polygon = VectorBase.ogr2shapely(geom).buffer(raster_buffer)
+            except Exception as e:
+                log.error(f"Buffer failed for ReachID {reach_id}: {e}")
+                continue
+            if not polygon.is_valid or polygon.is_empty:
+                log.warning(f"Invalid or empty buffer for ReachID {reach_id}")
+                continue
+            ''''''
+
             if transform:
                 geom.Transform(transform)
-
+            ''' DEBUGGING '''
+            log.info(f"Transformed Geometry WKT: {geom.ExportToWkt()}")
+            ''''''
+            
             polygon = VectorBase.ogr2shapely(geom).buffer(raster_buffer)
             polygons[reach_id] = polygon
 

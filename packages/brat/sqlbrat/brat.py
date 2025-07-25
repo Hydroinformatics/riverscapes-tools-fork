@@ -435,9 +435,9 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
     ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (6 lines)'''
-    veg_adjustment_type = None
+    veg_adjustment_type = 'shape'
     veg_adjustment_value = None
-    cmb_adjustment_type = None
+    cmb_adjustment_type = 'shape'
     cmb_adjustment_values = None
     log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED: type = {veg_adjustment_type}, value = {veg_adjustment_value}')
     log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED: type = {cmb_adjustment_type}, values = {cmb_adjustment_values}')
