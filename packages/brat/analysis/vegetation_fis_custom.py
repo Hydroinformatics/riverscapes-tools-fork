@@ -28,7 +28,7 @@ from rscommons.database import write_db_attributes, write_db_dgo_attributes
 adjustment_types = ['scale', 'shape']
 '''Acceptable adjustment values:
     # scale: a float value representing the scaling factor (e.g., 0.5 for compression, 2 for stretching)
-    # shape: must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
+    # shape: no value. must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
 '''
 
 
@@ -45,6 +45,10 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         adjustment_value {float} -- Value for the adjustment (e.g., scaling factor)
     """
 
+    log = Logger('Vegetation FIS')
+    log.info('Processing {} vegetation'.format(label))
+    log.info('Adjustment type: {}, value: {}'.format(adjustment_type, adjustment_value))
+
     # handle adjustments
     if adjustment_type:
         if adjustment_type not in adjustment_types:
@@ -54,10 +58,6 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_value = None
-
-    log = Logger('Vegetation FIS')
-    log.info('Processing {} vegetation'.format(label))
-    log.info('Adjustment type: {}, value: {}'.format(adjustment_type, adjustment_value))
 
     streamside_field = 'iVeg_30{}'.format(veg_type)
     riparian_field = 'iVeg100{}'.format(veg_type)
@@ -94,7 +94,8 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     :param adj_val: Value for the adjustment (scaling factor)
     """
 
-    log = Logger('Vegetation FIS')
+    log = Logger('CUSTOM Vegetation FIS')
+    log.info('Initializing CUSTOM Vegetation FIS')
 
     feature_count = len(feature_values)
     reachid_array = np.zeros(feature_count, np.int64)
@@ -266,9 +267,10 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     fig, axs = plt.subplots(1, 1, figsize=(12, 4))
     for label, color in zip(list(density.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         axs.plot(density.universe, density.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
-    plt.xlabel('Dam Capacity from Vegetation FIS')
+    plt.xlabel('Dam Density (dams/km) from Vegetation FIS')
     plt.ylabel('Membership')
-    plt.legend()
+    plt.legend(title='Capacity:')
+    plt.xlim(0, 40)
     plt.tight_layout()
     plt.show()
     

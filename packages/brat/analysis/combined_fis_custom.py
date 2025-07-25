@@ -48,6 +48,9 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     :param adjustment_values: List of values for adjustments (shifts or scaling factors)
     :return: None
     """
+
+    log = Logger('Combined FIS')
+    log.info('Processing {} vegetation'.format(label))
     
     # handle adjustments
     if adjustment_type:
@@ -60,9 +63,6 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_values = None
-
-    log = Logger('Combined FIS')
-    log.info('Processing {} vegetation'.format(label))
 
     veg_fis_field = 'oVC_{}'.format(veg_type)
     capacity_field = 'oCC_{}'.format(veg_type)
@@ -89,7 +89,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
 
 
 def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capacity_field: str, dam_count_field: str, max_drainage_area: float,
-                                  adj_type: str, adj_vals: list):
+                                  adj_type: str = None, adj_vals: list = [1.0, 1.0, 1.0]):
     """
     Calculate dam capacity and density using combined FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -102,8 +102,8 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     :return: Insert the dam capacity and density values to the feature_values dictionary
     """
 
-    log = Logger('Combined FIS')
-    log.info('Initializing Combined FIS')
+    log = Logger('CUSTOM Combined FIS')
+    log.info('Initializing CUSTOM Combined FIS')
 
     if not max_drainage_area:
         log.warning('Missing max drainage area. Calculating combined FIS without max drainage threshold.')
@@ -390,9 +390,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     # oVC
     for label, color in zip(list(ovc.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         plt.plot(ovc.universe, ovc.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
-    plt.xlabel('oVC (Vegetation) Suitability')
+    plt.xlabel('Dam Density (dams/km) from Veg FIS')
     plt.ylabel('Membership')
-    plt.legend()
+    plt.legend(title='Capacity:')
+    plt.xlim(0, 40)
     plt.tight_layout()
     plt.show()
 
@@ -430,9 +431,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     fig, axs = plt.subplots(1, 1, figsize=(12, 4))
     for label, color in zip(list(density.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         axs.plot(density.universe, density.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
-    plt.xlabel('Overall Dam Capacity')
+    plt.xlabel('Overall Dam Density (dams/km)')
     plt.ylabel('Membership')
-    plt.legend()
+    plt.legend(title='Capacity')
+    plt.xlim(0, 40)
     plt.tight_layout()
     plt.show()
     
@@ -441,6 +443,11 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
 
 
 def calculate_trap_scale(abcd: list = None, scale_factor: float = 1.0):
+    """
+    Helper function to scale trapezoidal membership functions (MFs)
+    :param abcd: vertices (left-to-right) of the trapezoid
+    :param scale_factor: the adjustment_value specified for this MF
+    """
     # we keep the top of the trapezoid fixed (no shifting)
     b = abcd[1]
     c = abcd[2]

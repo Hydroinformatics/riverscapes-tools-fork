@@ -435,12 +435,16 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
     ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (6 lines)'''
-    veg_adjustment_type = 'shape'
-    veg_adjustment_value = None
-    cmb_adjustment_type = 'shape'
-    cmb_adjustment_values = None
-    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED: type = {veg_adjustment_type}, value = {veg_adjustment_value}')
-    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED: type = {cmb_adjustment_type}, values = {cmb_adjustment_values}')
+    veg_adj_type = None
+    veg_adj_value = None
+    comb_adj_type = None
+    comb_adj_values = None
+    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {veg_adj_type}')
+    log.info(f'Value = {veg_adj_value}')
+    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {comb_adj_type}')
+    log.info(f'Values = {comb_adj_values}')
 
     for epoch, prefix, ltype, orig_id in Epochs:
 
@@ -452,8 +456,10 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (4 lines)'''
         # vegetation_fis(outputs_gpkg_path, epoch, prefix)
         # combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
-        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, veg_adjustment_type, veg_adjustment_value)
-        combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, cmb_adjustment_type, cmb_adjustment_values)
+        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, 
+                              adjustment_type=veg_adj_type, adjustment_value=veg_adj_value)
+        combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, 
+                            adjustment_type=comb_adj_type, adjustment_values=comb_adj_values)
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
         _veg_suit_raster_node, veg_suit_raster = project.add_project_raster(proj_nodes['Intermediates'], LayerTypes[ltype], None, True)
@@ -463,18 +469,19 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
     # Record type of FIS SA adjustment in a separate table just for records
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Recording adjustments...')
-        create_stmt = "CREATE TABLE FISAdjustments (FIS, MF, Adj_Type TEXT, Adj_Val REAL)"
+        create_stmt = "CREATE TABLE FISAdjustments (FIS TEXT, MF TEXT, Adj_Type TEXT, Adj_Val REAL)"
         database.curs.execute(create_stmt)
         # insert
-        adjustment_data = [
-            ["Vegetation FIS", "Riparian Suitability", f"{veg_adjustment_type}", veg_adjustment_value],
-            ["Vegetation FIS", "Streamside Suitability", f"{veg_adjustment_type}", veg_adjustment_value],
-            ["Combined FIS", "SP2", f"{cmb_adjustment_type}", cmb_adjustment_values[0]],
-            ["Combined FIS", "SPlow", f"{cmb_adjustment_type}", cmb_adjustment_values[1]],
-            ["Combined FIS", "Slope", f"{cmb_adjustment_type}", cmb_adjustment_values[2]],
-        ]
-        for row in adjustment_data:
-            database.curs.execute(f'INSERT INTO FISAdjustments VALUES {row}')
+        if veg_adj_type and veg_adj_value and comb_adj_type and comb_adj_values:
+            adjustment_data = [
+                ["Vegetation FIS", "Riparian Suitability", f"{veg_adj_type}", veg_adj_value],
+                ["Vegetation FIS", "Streamside Suitability", f"{veg_adj_type}", veg_adj_value],
+                ["Combined FIS", "SP2", f"{comb_adj_type}", comb_adj_values[0]],
+                ["Combined FIS", "SPlow", f"{comb_adj_type}", comb_adj_values[1]],
+                ["Combined FIS", "Slope", f"{comb_adj_type}", comb_adj_values[2]],
+            ]
+            for row in adjustment_data:
+                database.curs.execute('INSERT INTO FISAdjustments (FIS, MF, Adj_Type, Adj_Val) VALUES(?, ?, ?, ?)', row)
     
 
     # Calculate departure from historical conditions
