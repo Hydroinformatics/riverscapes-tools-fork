@@ -55,9 +55,9 @@ brat $HUC10 \
     $RS/vegetation/existing_veg.tif \
     $RS/vegetation/historic_veg.tif \
     $VBET/outputs/vbet.gpkg/vbet_full \
-    30 \
-    100 \
-    $OUT_DIR \
+    30.0 \
+    100.0 \
+    $OUTPUT_DIR \
     --reach_codes 33400,33600,33601,33603,46000,46003,46006,46007 \
     --canal_codes 33600,33601,33603 \
     --peren_codes 46006 \
