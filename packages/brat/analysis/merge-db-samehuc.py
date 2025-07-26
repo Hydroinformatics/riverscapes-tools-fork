@@ -17,6 +17,11 @@ Evan Hackstadt
 July 2025
 """
 
+# TODO:
+#   - Broken. Schema is good, but vals are NULL.
+#   - pivot stats table such that stats are columns?
+
+
 import sqlite3
 import os
 import statistics
@@ -26,6 +31,10 @@ import statistics
 # Paths to your source databases                               # SET THESE
 source_dbs = {
     # 'path to db': 'shorthand label'
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg':
+        'Standard',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg':
+        'P_Bt'
 }
 # ReachIDs should be equal in all source dbs
 # Shorthand label will be used in the columns of the merged db
@@ -45,7 +54,7 @@ columns_to_copy_each = [    # from each source db
 
 # Name of the new database and table
 new_db = 'brat-all-fis.db'
-new_db_path = ''                                            # SET THIS
+new_db_path = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/fis-runs-processed/'                        # SET THIS
 new_table_name = 'CombinedOutputs'
 
 # Add a table to the database summarizing the mean, st.dev, etc. of each column for all reaches
@@ -67,14 +76,14 @@ if stats_table: cur.execute("DROP TABLE IF EXISTS Stats")
 # Build CREATE TABLE statement
 ind_cols = columns_to_copy_once
 dep_cols = []
-ind_col_stmt = ''
-dep_col_stmt = ''
-for col in columns_to_copy_once:
-    dep_col_stmt += f", {col} REAL"
+# ind_col_stmt = []
+# dep_col_stmt = []
 for col in columns_to_copy_each:
     for label in source_dbs.values():
         dep_cols.append(f"{col}_{label}")
-        dep_col_stmt += f", {col}_{label} REAL"
+
+ind_col_stmt = ', '.join(ind_cols)
+dep_col_stmt = ', '.join(dep_cols)
 
 # Create table(s)
 cur.execute(f"CREATE TABLE {new_table_name} ({ind_col_stmt}, {dep_col_stmt})")
@@ -82,21 +91,21 @@ if stats_table:
     cur.execute(f"CREATE TABLE Stats (Statistic, {dep_col_stmt})")
 conn.commit()
 
-# For first source database, copy data to independent columns
-db = source_dbs[0]
+# For first source database, copy data to independent columns (one time)
+db = list(source_dbs.keys())[0]
 print(f"Adding independent data from {db}...")
 src_conn = sqlite3.connect(db)
 src_cur = src_conn.cursor()
 src_cur.execute(f"SELECT {ind_col_stmt} FROM {source_table}")
 rows = src_cur.fetchall()
 # Prepare insert statement
-placeholders = ', '.join(['?']*len(rows))
+placeholders = ', '.join(['?'] * len(ind_cols))
 insert_stmt = f"INSERT INTO {new_table_name} ({ind_col_stmt}) VALUES ({placeholders})"
 cur.executemany(insert_stmt, rows)
 src_conn.close()
 print(f"Inserted {len(rows)} rows for columns {columns_to_copy_once}")
 
-# For each source database, copy data to dependent columns
+# For each source database, copy data to dependent columns (iterative)
 for db, label in source_dbs.items():
     print(f"Processing {db}...")
     src_conn = sqlite3.connect(db)
@@ -104,13 +113,12 @@ for db, label in source_dbs.items():
     src_cur.execute(f"SELECT {', '.join(columns_to_copy_each)} FROM {source_table}")
     rows = src_cur.fetchall()
     # Prepare insert statement
-    db_col_stmt = ''
+    db_cols = []
     for col in columns_to_copy_each:
-        db_col_stmt += f", {col}_{label} REAL"
-    placeholders = ', '.join(['?'] * len(rows))
-    insert_stmt = f"INSERT INTO {new_table_name} ({db_col_stmt}) VALUES ({placeholders})"
-    data = rows
-    cur.executemany(insert_stmt, data)
+        db_cols.append(f"{col}_{label}")
+    placeholders = ', '.join(['?'] * len(db_cols))
+    insert_stmt = f"INSERT INTO {new_table_name} ({', '.join(db_cols)}) VALUES ({placeholders})"
+    cur.executemany(insert_stmt, rows)
     src_conn.close()
     print(f"Inserted {len(rows)} rows from {db} for columns {columns_to_copy_each}")
 
@@ -127,21 +135,24 @@ if stats_table:
         cur.execute(f"SELECT AVG({col}), MIN({col}), MAX({col}) FROM {new_table_name}")
         avg, min_, max_ = cur.fetchone()
         # store in dictionary
-        stats_results["Average"].append(avg)
-        stats_results["Min"].append(min_)
-        stats_results["Max"].append(max_)
+        stats_results["Average"].append(round(avg, 3))
+        stats_results["Min"].append(round(min_, 2))
+        stats_results["Max"].append(round(max_, 2))
 
         # use python for st.dev
         cur.execute(f"SELECT {col} FROM {new_table_name}")
-        values = [row[0] for row in cur.fetchall()]
-        stdev = statistics.stdev(values)
+        values = [row[0] for row in cur.fetchall() if row[0] is not None]
+        if len(values) > 1:
+            stdev = round(statistics.stdev(values), 3)
+        else:
+            stdev = None
         stats_results["StandardDeviation"].append(stdev)
 
     # insert a row for each stat
     for stat in stats:
         row = [stat] + stats_results[stat]
-        placeholders = ', '.join(['?'] * len(row))
-        cur.executemany(f"INSERT INTO Stats VALUES ({placeholders})", row)
+        placeholders = ', '.join(['?'] * (len(dep_cols) + 1))
+        cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
     
     conn.commit()
 
