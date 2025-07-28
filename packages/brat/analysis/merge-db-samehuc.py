@@ -17,14 +17,10 @@ Evan Hackstadt
 July 2025
 """
 
-# TODO:
-#   - Broken. Schema is good, but vals are NULL.
-#   - pivot stats table such that stats are columns?
-
-
-import sqlite3
 import os
 import statistics
+import sqlite3
+import numpy as np
 
 # --- CONFIGURATION ---
 
@@ -32,9 +28,9 @@ import statistics
 source_dbs = {
     # 'path to db': 'shorthand label'
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg':
-        'Standard',
+        'ST',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg':
-        'P_Bt'
+        'CVboth'
 }
 # ReachIDs should be equal in all source dbs
 # Shorthand label will be used in the columns of the merged db
@@ -44,7 +40,7 @@ source_table = 'ReachAttributes'
 
 # Columns to copy (must exist in all source tables)
 columns_to_copy_once = [    # independent columns
-    'ReachID',
+    'ReachID',  # do not change
     'WatershedID'
 ]
 columns_to_copy_each = [    # from each source db
@@ -53,8 +49,8 @@ columns_to_copy_each = [    # from each source db
 ]
 
 # Name of the new database and table
-new_db = 'brat-all-fis.db'
-new_db_path = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/fis-runs-processed/'                        # SET THIS
+new_db_name = 'brat-all-fis.db'
+new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/fis-runs-processed/'                        # SET THIS
 new_table_name = 'CombinedOutputs'
 
 # Add a table to the database summarizing the mean, st.dev, etc. of each column for all reaches
@@ -64,98 +60,100 @@ stats_table = True
 
 # --- SCRIPT STARTS HERE ---
 
-# Create the new database and table
-new_db_path = os.path.join(new_db_path, new_db)
-conn = sqlite3.connect(new_db_path)
-cur = conn.cursor()
+new_db_path = os.path.join(new_db_dir, new_db_name)
 
-# Drop tables if they exists (for repeatable runs)
-cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
-if stats_table: cur.execute("DROP TABLE IF EXISTS Stats")
+with sqlite3.connect(new_db_path) as conn:
+    cur = conn.cursor()
 
-# Build CREATE TABLE statement
-ind_cols = columns_to_copy_once
-dep_cols = []
-# ind_col_stmt = []
-# dep_col_stmt = []
-for col in columns_to_copy_each:
+    # Drop tables if they exists (for repeatable runs)
+    cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
+    if stats_table: cur.execute("DROP TABLE IF EXISTS Stats")
+
+    # Useful row and column lists and strings
+    ind_cols = columns_to_copy_once
+    ind_col_stmt = ', '.join(ind_cols)
+    src_dep_col_stmt = ', '.join(columns_to_copy_each)
+
+    new_dep_cols = []
     for label in source_dbs.values():
-        dep_cols.append(f"{col}_{label}")
+        for col in columns_to_copy_each:
+            new_dep_cols.append(f"{col}_{label}")
 
-ind_col_stmt = ', '.join(ind_cols)
-dep_col_stmt = ', '.join(dep_cols)
+    new_all_cols = ind_cols + new_dep_cols
+    new_all_cols_stmt = ', '.join(new_all_cols)
 
-# Create table(s)
-cur.execute(f"CREATE TABLE {new_table_name} ({ind_col_stmt}, {dep_col_stmt})")
-if stats_table:
-    cur.execute(f"CREATE TABLE Stats (Statistic, {dep_col_stmt})")
-conn.commit()
-
-# For first source database, copy data to independent columns (one time)
-db = list(source_dbs.keys())[0]
-print(f"Adding independent data from {db}...")
-src_conn = sqlite3.connect(db)
-src_cur = src_conn.cursor()
-src_cur.execute(f"SELECT {ind_col_stmt} FROM {source_table}")
-rows = src_cur.fetchall()
-# Prepare insert statement
-placeholders = ', '.join(['?'] * len(ind_cols))
-insert_stmt = f"INSERT INTO {new_table_name} ({ind_col_stmt}) VALUES ({placeholders})"
-cur.executemany(insert_stmt, rows)
-src_conn.close()
-print(f"Inserted {len(rows)} rows for columns {columns_to_copy_once}")
-
-# For each source database, copy data to dependent columns (iterative)
-for db, label in source_dbs.items():
-    print(f"Processing {db}...")
-    src_conn = sqlite3.connect(db)
-    src_cur = src_conn.cursor()
-    src_cur.execute(f"SELECT {', '.join(columns_to_copy_each)} FROM {source_table}")
-    rows = src_cur.fetchall()
-    # Prepare insert statement
-    db_cols = []
-    for col in columns_to_copy_each:
-        db_cols.append(f"{col}_{label}")
-    placeholders = ', '.join(['?'] * len(db_cols))
-    insert_stmt = f"INSERT INTO {new_table_name} ({', '.join(db_cols)}) VALUES ({placeholders})"
-    cur.executemany(insert_stmt, rows)
-    src_conn.close()
-    print(f"Inserted {len(rows)} rows from {db} for columns {columns_to_copy_each}")
-
-conn.commit()
-
-# Populate stats table if requested
-if stats_table:
-    print(f"Processing all reaches into Stats table...")
-    stats = ["Average", "Min", "Max", "StandardDeviation"]
-    stats_results = {stat: [] for stat in stats}    # to hold results for each stat
-
-    # compute stats
-    for col in dep_cols:
-        cur.execute(f"SELECT AVG({col}), MIN({col}), MAX({col}) FROM {new_table_name}")
-        avg, min_, max_ = cur.fetchone()
-        # store in dictionary
-        stats_results["Average"].append(round(avg, 3))
-        stats_results["Min"].append(round(min_, 2))
-        stats_results["Max"].append(round(max_, 2))
-
-        # use python for st.dev
-        cur.execute(f"SELECT {col} FROM {new_table_name}")
-        values = [row[0] for row in cur.fetchall() if row[0] is not None]
-        if len(values) > 1:
-            stdev = round(statistics.stdev(values), 3)
-        else:
-            stdev = None
-        stats_results["StandardDeviation"].append(stdev)
-
-    # insert a row for each stat
-    for stat in stats:
-        row = [stat] + stats_results[stat]
-        placeholders = ', '.join(['?'] * (len(dep_cols) + 1))
-        cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
-    
+    # Create table(s)
+    cur.execute(f"CREATE TABLE {new_table_name} ({new_all_cols_stmt})")
+    if stats_table:
+        stat_cols = ["Mean", "St_Dev", "Min", "Max"]
+        cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")     # stats table is pivoted
     conn.commit()
 
+    # Populate new db. Gather relevant data and store
 
-conn.close()
+    # First get independent col data once from first source db
+    db = list(source_dbs.keys())[0]
+    print(f"Querying independent data from {db}...")
+    src_conn = sqlite3.connect(db)
+    src_cur = src_conn.cursor()
+    src_cur.execute(f"SELECT {ind_col_stmt} FROM {source_table}")
+    ind_rows = src_cur.fetchall()
+    data = [list(row) for row in ind_rows]  # convert from tuple
+
+    # Now, for each source db, get data for all reaches and store
+    for db, label in source_dbs.items():
+        print(f"Now processing {db}...")
+        src_conn = sqlite3.connect(db)
+        src_cur = src_conn.cursor()
+        src_cur.execute(f"SELECT {src_dep_col_stmt} FROM {source_table}")
+        dep_rows = src_cur.fetchall()
+        for i in range(len(data)):    # assuming db structures parallel
+            data[i] += list(dep_rows[i])    # append this db's dep cols
+        src_conn.close()
+    # Insert stored data
+    placeholders = ', '.join(['?'] * (len(data[0])))
+    print(placeholders)
+    insert_stmt = f"INSERT INTO {new_table_name} ({new_all_cols_stmt}) VALUES ({placeholders})"
+    print(insert_stmt)
+    cur.executemany(insert_stmt, data)
+
+    print(f"Inserted {len(ind_rows)} rows of data for all columns")
+    conn.commit()
+
+    # Populate stats table if requested
+    if stats_table:
+        print(f"Processing all reaches into Stats table...")
+        results = {stat: [] for stat in stat_cols}    # to hold results for each stat
+
+        # compute stats
+        for col in new_dep_cols:
+            cur.execute(f"SELECT AVG({col}), MIN({col}), MAX({col}) FROM {new_table_name}")
+            mean_, min_, max_ = cur.fetchone()
+            # store in dictionary
+            results["Mean"].append(round(mean_, 3))
+            results["Min"].append(round(min_, 2))
+            results["Max"].append(round(max_, 2))
+
+            # use python for st.dev
+            cur.execute(f"SELECT {col} FROM {new_table_name}")
+            values = [row[0] for row in cur.fetchall() if row[0] is not None]
+            if len(values) > 1:
+                stdev = round(statistics.stdev(values), 3)
+            else:
+                stdev = None
+            results["St_Dev"].append(stdev)
+
+        # insert a row for each dependent column
+        # stats are columns
+        for i in range(len(new_dep_cols)):
+            row = []
+            row.append(new_dep_cols[i])
+            for stat in stat_cols:
+                row.append(results[stat][i])
+            placeholders = ', '.join(['?'] * (len(row)))
+            cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
+        
+        conn.commit()
+
+
 print("Merging complete! Data is in", new_db_path)
