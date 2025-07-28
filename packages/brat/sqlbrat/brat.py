@@ -434,11 +434,22 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_drainage_area = None
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
-    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (6 lines)'''
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (21 lines)'''
+    '''Acceptable adjustments:
+    # VEG TYPE: 'scale' or 'shape'
+    # VEG VALUE: single float
+    # COMB TYPE: 'shift', 'scale', or 'shape'
+    # COMB VALUE: list of floats, for MFs: [splow, sp2, slope]
+    
+    # shift: float representing the actual units to shift MF by (neg = left, pos = right)
+    # scale: float representing the scaling factor ((0,1) = compress, >1 = stretch)
+    # shape: must be adjusted manually within the custom FIS scripts
+    '''
     veg_adj_type = None
     veg_adj_value = None
-    comb_adj_type = None
-    comb_adj_values = None
+    comb_adj_type = 'shift'
+    comb_adj_values = [-10, 0, 0]       # [splow, sp2, slope]
+    
     log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
     log.info(f'Type = {veg_adj_type}')
     log.info(f'Value = {veg_adj_value}')
@@ -469,19 +480,20 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
     # Record type of FIS SA adjustment in a separate table just for records
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Recording adjustments...')
-        create_stmt = "CREATE TABLE FISAdjustments (FIS TEXT, MF TEXT, Adj_Type TEXT, Adj_Val REAL)"
+        create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
         database.curs.execute(create_stmt)
         # insert
-        if veg_adj_type and veg_adj_value and comb_adj_type and comb_adj_values:
-            adjustment_data = [
-                ["Vegetation FIS", "Riparian Suitability", f"{veg_adj_type}", veg_adj_value],
-                ["Vegetation FIS", "Streamside Suitability", f"{veg_adj_type}", veg_adj_value],
-                ["Combined FIS", "SP2", f"{comb_adj_type}", comb_adj_values[0]],
-                ["Combined FIS", "SPlow", f"{comb_adj_type}", comb_adj_values[1]],
-                ["Combined FIS", "Slope", f"{comb_adj_type}", comb_adj_values[2]],
+        comb_adj_values = [None, None, None] if not comb_adj_values else comb_adj_values
+        adjustment_data = [
+            ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_value],
+            ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_value],
+            ["Combined FIS", "SPlow", comb_adj_type, comb_adj_values[0]],
+            ["Combined FIS", "SP2", comb_adj_type, comb_adj_values[1]],
+            ["Combined FIS", "Slope", comb_adj_type, comb_adj_values[2]],
             ]
-            for row in adjustment_data:
-                database.curs.execute('INSERT INTO FISAdjustments (FIS, MF, Adj_Type, Adj_Val) VALUES(?, ?, ?, ?)', row)
+            
+        database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
+        database.conn.commit()
     
 
     # Calculate departure from historical conditions

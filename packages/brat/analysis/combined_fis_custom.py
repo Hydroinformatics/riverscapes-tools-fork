@@ -11,8 +11,6 @@ Evan Hackstadt
 July 2025
 """
 
-# TODO:
-# ~write additional column to the database specifying the adjustment~ DO THIS IN BRAT.PY, NOT HERE
 
 import os
 import sys
@@ -28,9 +26,9 @@ from rscommons import ProgressBar, Logger, dotenv
 
 adjustment_types = ['shift', 'scale', 'shape']
 '''Acceptable adjustment values:
-    # shift: a list of floats representing the actual units to shift each MF by: [sp2, splow, slope].
+    # shift: a list of floats representing the actual units to shift each MF by: [splow, sp2, slope].
     #           Negative = shift left. Positive = shift right.
-    # scale: a list of floats representing the scaling factors for each MF: [sp2, splow, slope].
+    # scale: a list of floats representing the scaling factors for each MF: [splow, sp2, slope].
     #           (e.g., 0.5 for compression, 2 for stretching)
     # shape: must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
 '''
@@ -57,7 +55,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
         if not adjustment_values and adjustment_type != 'shape':
-            raise ValueError(f"Please provide adjustment values: list of [sp2, splow, slope] shift amounts or scale factors.")
+            raise ValueError(f"Please provide adjustment values: list of [splow, sp2, slope] shift amounts or scale factors.")
         if adjustment_type == 'scale' and [val <= 0 for val in adjustment_values]:
             raise ValueError(f"Invalid scale factor: {adjustment_values}. Must be greater than 0.")
         if adjustment_type == 'shape':
@@ -142,8 +140,8 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
 
     # create antecedent (input) and consequent (output) objects to hold universe variables and membership functions
     ovc = ctrl.Antecedent(np.arange(0, 45, 0.01), 'input1')
-    sp2 = ctrl.Antecedent(np.arange(0, 10000, 1), 'input2')
     splow = ctrl.Antecedent(np.arange(0, 10000, 1), 'input3')
+    sp2 = ctrl.Antecedent(np.arange(0, 10000, 1), 'input2')
     slope = ctrl.Antecedent(np.arange(0, 1, 0.0001), 'input4')
     density = ctrl.Consequent(np.arange(0, 45, 0.01), 'result')
 
@@ -163,17 +161,17 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
 
     if adj_type == 'shift':
-        # we shift all values by the constant except min and max bounds
+        # we shift all values by the specified constant except min and max bounds
         c1 = adj_vals[0]
-        sp2['persists'] = fuzz.trapmf(sp2.universe, [0, 0, 1000+c1, 1200+c1])
-        sp2['breach'] = fuzz.trimf(sp2.universe, [1000+c1, 1200+c1, 1600+c1])
-        sp2['oblowout'] = fuzz.trimf(sp2.universe, [1200+c1, 1600+c1, 2400+c1])
-        sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600+c1, 2400+c1, 10000, 10000])
+        splow['can'] = fuzz.trapmf(splow.universe, [0, 0, 150+c1, 175+c1])
+        splow['probably'] = fuzz.trapmf(splow.universe, [150+c1, 175+c1, 180+c1, 190+c1])
+        splow['cannot'] = fuzz.trapmf(splow.universe, [180+c1, 190+c1, 10000, 10000])
 
         c2 = adj_vals[1]
-        splow['can'] = fuzz.trapmf(splow.universe, [0, 0, 150+c2, 175+c2])
-        splow['probably'] = fuzz.trapmf(splow.universe, [150+c2, 175+c2, 180+c2, 190+c2])
-        splow['cannot'] = fuzz.trapmf(splow.universe, [180+c2, 190+c2, 10000, 10000])
+        sp2['persists'] = fuzz.trapmf(sp2.universe, [0, 0, 1000+c2, 1200+c2])
+        sp2['breach'] = fuzz.trimf(sp2.universe, [1000+c2, 1200+c2, 1600+c2])
+        sp2['oblowout'] = fuzz.trimf(sp2.universe, [1200+c2, 1600+c2, 2400+c2])
+        sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600+c2, 2400+c2, 10000, 10000])
 
         c3 = adj_vals[2]
         slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002+c3, 0.005+c3])
@@ -192,14 +190,14 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
             #       d = c + ((d-c) * scalefactor)
         
         trapezoids = {
-            'sp2': [
-                ['persists', [0, 0, 1000, 1200]],
-                ['blowout', [1600, 2400, 10000, 10000]]
-            ],
             'splow': [
                 ['can', [0, 0, 150, 175]],
                 ['probably', [150, 175, 180, 190]],
                 ['cannot', [80, 190, 10000, 10000]]
+            ],
+            'sp2': [
+                ['persists', [0, 0, 1000, 1200]],
+                ['blowout', [1600, 2400, 10000, 10000]]
             ],
             'slope': [
                 ['flat', [0, 0, 0.0002, 0.005]],
@@ -217,19 +215,19 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         # scale trapezoids iteratively
         for var, mfs in trapezoids.items():
             for category, abcd in mfs:
-                if var == 'sp2':
-                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[0])
-                    sp2[category] = fuzz.trapmf(sp2.universe, [a, b, c, d])
                 if var == 'splow':
-                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[1])
+                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[0])
                     splow[category] = fuzz.trapmf(splow.universe, [a, b, c, d])
+                if var == 'sp2':
+                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[1])
+                    sp2[category] = fuzz.trapmf(sp2.universe, [a, b, c, d])
                 if var == 'slope':
                     a, b, c, d = calculate_trap_scale(abcd, adj_vals[2])
                     slope[category] = fuzz.trapmf(slope.universe, [a, b, c, d])
         
-        # scale triangles iteratively
+        # scale triangles iteratively - only sp2 has tris
         for cat, abc in sp2_triangles.items():
-            scale = adj_vals[0]
+            scale = adj_vals[1]
             b = abc[1]
             a = b - ((b - abc[0]) * scale)
             c = b -((abc[2] - b) * scale)
@@ -238,14 +236,14 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     elif adj_type == 'shape':
         log.info("Running custom-defined MF shapes.")
         # CUSTOM SHAPES DEFINED HERE
+        splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
+        splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
+        splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
+
         sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
         sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
         sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
         sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
-
-        splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
-        splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
-        splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
 
         slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
         slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
@@ -397,16 +395,6 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.tight_layout()
     plt.show()
 
-    # SP2
-    for label, color in zip(list(sp2.terms.keys()), ['g', 'y', 'orange', 'r']):
-        plt.plot(sp2.universe, sp2.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
-    plt.xlabel('SP2 Peak Flow (watts)')
-    plt.ylabel('Membership')
-    plt.legend()
-    plt.xlim(500, 3000)
-    plt.tight_layout()
-    plt.show()
-
     # SPLow
     for label, color in zip(list(splow.terms.keys()), ['g', 'y', 'r']):
         plt.plot(splow.universe, splow.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
@@ -414,6 +402,16 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.ylabel('Membership')
     plt.legend()
     plt.xlim(100, 250)
+    plt.tight_layout()
+    plt.show()
+
+    # SP2
+    for label, color in zip(list(sp2.terms.keys()), ['g', 'y', 'orange', 'r']):
+        plt.plot(sp2.universe, sp2.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
+    plt.xlabel('SP2 Peak Flow (watts)')
+    plt.ylabel('Membership')
+    plt.legend()
+    plt.xlim(500, 3000)
     plt.tight_layout()
     plt.show()
 
