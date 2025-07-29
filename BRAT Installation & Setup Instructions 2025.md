@@ -8,11 +8,11 @@ Dr. Meghna Babbar-Sebens
 
 Do be aware that Riverscapes’ priority is automating BRAT and their other tools to get outputs for much of the US, which they’ve achieved. See their publicly available data: [https://data.riverscapes.net/](https://data.riverscapes.net/). The tool is not intended to be run by individuals locally, though it is possible thanks to the code being open source.  
 Although Riverscapes Consortium provides [Installation Instructions](https://tools.riverscapes.net/brat/Advanced/installation/) for getting sqlBRAT set up locally, they are out of date and simply didn’t work for me (as of June 2025). This document outlines alternative methods that worked for me after many hours of troubleshooting.  
-	The document [GEOS-BRAT.-.Running.BRAT-210623-010659.pdf](https://drive.google.com/file/d/1S52NVVc1jPQ-srPb7bFJp7qhg5GRW2Lq/view?usp=drive_link), from user “ecopony” on this GitHub [discussion thread](https://github.com/Riverscapes/riverscapes-tools/discussions/693) (\#693 on the repo), is highly useful and helped inform these instructions. It will be referred to as Ed’s Notes. However, I still had to do things differently since the code has been changed since.
+	User “ecopony” on this GitHub [discussion thread](https://github.com/Riverscapes/riverscapes-tools/discussions/693#discussioncomment-6236482) documented their installation process from a few years ago. It is highly useful and helped inform these instructions. It will be referred to as Ed’s Notes. However, I still had to do things differently since the code has been changed since.
 
 ### Requirements:
 
-* I made a few tweaks and bug fixes to the code. These can be found on our [forked GitHub repo](https://github.com/Hydroinformatics/riverscapes-tools-fork). We recommend using the code from that repo, or reproducing our modifications yourself.  
+* I made a few tweaks and bug fixes to the code. These are found here, on our [forked GitHub repo](https://github.com/Hydroinformatics/riverscapes-tools-fork). I recommend using the code from that repo, or reproducing the modifications yourself.  
 * This was initially done on a Mac (M2 MBA on macOS Sequoia).  
 * If on Windows, you will also need [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
