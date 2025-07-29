@@ -27,10 +27,13 @@ import numpy as np
 # Paths to your source databases                               # SET THESE
 source_dbs = {
     # 'path to db': 'shorthand label'
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg':
-        'ST',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg':
-        'CVboth'
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg': 'ST',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'Lspl',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'Rspl',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'Lsp2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Right/outputs/brat.gpkg': 'Rsp2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Left/outputs/brat.gpkg': 'Lslo',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg': 'CVboth'
 }
 # ReachIDs should be equal in all source dbs
 # Shorthand label will be used in the columns of the merged db
