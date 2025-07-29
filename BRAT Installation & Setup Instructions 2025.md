@@ -1,6 +1,6 @@
-Evan Hackstadt
-Dr. Meghna Babbar-Sebens
-2025 July
+Evan Hackstadt  
+Dr. Meghna Babbar-Sebens  
+2025 July  
 
 # How to Use sqlBRAT Locally
 
