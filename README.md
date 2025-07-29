@@ -4,9 +4,7 @@ This is a monorepo housing the python open-source GIS tools for Riverscapes.
 It is a fork that includes some tweaks needed to run the tools locally.
 See the [original repo](https://github.com/Riverscapes/riverscapes-tools) for the latest changes and fully original code.
 
-* [Riverscapes Context](./packages/rscontext)
 * [BRAT](./packages/brat)
-* [VBET](./packages/vbet)
 
 ## How to Use sqlBRAT
 My personal experience setting up sqlBRAT locally as of June 2025 is documented in this repo:
