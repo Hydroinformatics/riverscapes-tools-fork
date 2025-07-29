@@ -4,9 +4,8 @@ This is a monorepo housing the python open-source GIS tools for Riverscapes.
 It is a fork that includes some tweaks needed to run the tools locally.
 See the [original repo](https://github.com/Riverscapes/riverscapes-tools) for the latest changes and fully original code.
 
-* [BRAT](./packages/brat)
-
 ## How to Use sqlBRAT
+BRAT model code is [here](./packages/brat) in the repo, but you'll want to clone the entire thing if running locally.
 My personal experience setting up sqlBRAT locally as of June 2025 is documented in this repo:
 [BRAT Installation & Setup Instructions 2025.md](https://github.com/Hydroinformatics/riverscapes-tools-fork/blob/master/BRAT%20Installation%20%26%20Setup%20Instructions%202025.md)
 
