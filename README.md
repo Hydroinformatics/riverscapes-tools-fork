@@ -5,8 +5,8 @@ It is a fork that includes some tweaks needed to run the tools locally.
 See the [original repo](https://github.com/Riverscapes/riverscapes-tools) for the latest changes and fully original code.
 
 ## How to Use sqlBRAT
-BRAT model code is [here](./packages/brat) in the repo, but you'll want to clone the entire thing if running locally.
-My personal experience setting up sqlBRAT locally as of June 2025 is documented in this repo:
+BRAT model code is [here](./packages/brat) in the repo, but you'll want to clone the entire repo if running locally.  
+My personal experience setting up sqlBRAT locally as of June 2025 is documented here:  
 [BRAT Installation & Setup Instructions 2025.md](https://github.com/Hydroinformatics/riverscapes-tools-fork/blob/master/BRAT%20Installation%20%26%20Setup%20Instructions%202025.md)
 
 ## Overview of Changes (last updated: 2025-07-10)
