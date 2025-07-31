@@ -1,5 +1,5 @@
 """
-Performs additional analysis on BRAT output data (a single BRAT db).
+Performs additional analysis on BRAT output data (a single BRAT database).
 Checks for correlation between dam capacity and various other variables.
 Can print or save matplotlib plots.
 
@@ -10,9 +10,7 @@ July 2025
 
 
 # TODO:
-    # more scatters: oVC vs. oCC and color by hydro params to check for clusters: add to hydro limitation?
     # clean up: too many graphs; decide which are relevant
-    # test with custom combined BRAT database
 
 #imports
 import os
