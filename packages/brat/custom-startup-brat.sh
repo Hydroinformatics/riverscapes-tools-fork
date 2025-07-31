@@ -21,13 +21,14 @@ cd /Users/evan/Code/OSU-EB3-REU/sqlBRAT/riverscapes-tools-fork/packages/brat
             so that this script can be generalized.'''
 
 echo "———Inputs Paths:———"
-echo "ANTHRO: $ANTHRO"
-echo "HYDRO: $HYDRO"
-echo "RS: $RS"
-echo "VBET: $VBET"
+echo "ANTHRO:" $ANTHRO
+echo "HYDRO:" $HYDRO
+echo "RS:" $RS
+echo "VBET:" $VBET
 echo "———Other Vars:———"
-echo "HUC10: $HUC10"
-echo "OUTPUT_DIR: $OUTPUT_DIR"
+echo "HUC10:" $HUC10
+echo "OUTPUT_DIR:" $OUTPUT_DIR
+# echo "EGG_DIR:" $EGG_DIR
 
 # build and install
 python setup.py build
@@ -116,3 +117,9 @@ options:
   --debug               (optional) more output about things like memory usage. There is a
                         performance cost
 '''
+
+
+echo "NOTE: if you are for some reason using a BRAT version > 5.1.5, the command has changed and now requires Channel Area input."
+echo "Modify the command according to the brat -h usage. Most likely you'll have to insert:"
+echo "$CHANNEL/outputs/channel_area.gpkg/channel_area \"
+echo "after the VBET input.
