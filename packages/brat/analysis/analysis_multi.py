@@ -69,30 +69,35 @@ def capacity_comparison_bars(database, out_dir):
     x_data = []
     y_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
 
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
 
-    # figure out what hucs we are working with
-    hucs = select_var(database, table_name, 'WatershedID')
-    print(f"Found {len(hucs)} unique HUCs in db.")
+        # figure out what hucs we are working with
+        cur.execute(f"SELECT DISTINCT WatershedID FROM {table_name}")
+        hucs = cur.fetchall()
+        print(f"Found {len(hucs)} distinct HUCs in db.")
 
-    for huc in hucs:
-        print(f"Processing HUC {huc}...")
-        # append huc or custom name to x array for bar chart
-        x_data.append(custom_huc_names[huc] if custom_huc_names[huc] else huc)
+        for huc in hucs:
+            print(f"Processing HUC {huc}...")
+            # append huc or custom name to x array for bar chart
+            x_data.append(custom_huc_names[huc] if custom_huc_names[huc] else huc)
 
-        huc_data = select_var(database, table_name, 'oCC_EX', f'WHERE WatershedID = {huc}')
-        huc_total = len(huc_data)
+            cur.execute(f"SELECT oCC_EX FROM {table_name} WHERE WatershedID = {huc}")
+            huc_data = cur.fetchall()
+            huc_total = len(huc_data)
+            print(f"Selected {huc_total} reaches corresponding to HUC {huc}")
 
-        for cat in oCC_cutoffs:
-            lower = cat['lower'] if cat['lower'] else None
-            upper = cat['upper'] if cat['upper'] else None
-            filtered = huc_data
-            if lower:
-                filtered = [val for val in filtered if val > lower]
-            if upper:
-                filtered = [val for val in filtered if val <= upper]
-            
-            percent = round((len(filtered) / huc_total), 1)
-            y_data[cat].append(percent)
+            for cat in oCC_cutoffs:
+                lower = cat['lower'] if cat['lower'] else None
+                upper = cat['upper'] if cat['upper'] else None
+                filtered = huc_data
+                if lower:
+                    filtered = [val for val in filtered if val > lower]
+                if upper:
+                    filtered = [val for val in filtered if val <= upper]
+                
+                percent = round((len(filtered) / huc_total), 1)
+                y_data[cat].append(percent)
     
     # now construct bar chart
     fig, ax = plt.subplots()
@@ -109,30 +114,6 @@ def capacity_comparison_bars(database, out_dir):
         plt.close()
     else:
         plt.show()
-
-
-
-
-
-    
-
-    
-
-
-def select_var(database: str, table: str, var: str, arg: str = ''):
-    """
-    Utility function to return column of values for a specified feature
-    :param database: path to a BRAT database (.gpkg)
-    :param var: database name of the feature to be returned"""
-
-    with sqlite3.connect(database) as conn:
-        curs = conn.cursor()
-        curs.execute(f'SELECT {var} FROM {table} {arg}')
-        result = curs.fetchall()
-        var_data = [row[0] for row in result]   # convert to list of ints from tuples
-
-    print("Obtained {} {} values from database...".format(len(var_data), var))
-    return var_data
 
 
 
