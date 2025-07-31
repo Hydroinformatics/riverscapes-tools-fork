@@ -22,8 +22,9 @@ Line 59 caused an error attempting to edit a sealed object. New code is present 
 Added subfolders (e.g. ./utils) to the setup.py packages for BRAT, Anthro, Hydro, and VBET. New code is present in the repo.
 
 **Change NHDPlusV2 Paths**  
-Changed the manual paths to the NHDPlusV2 gpkg contents to match the names of the 2022 Oregon snapshot.
-If you're not running BRAT with the same input file (e.g. for a different state), you'll need to change this.
+Changed the manual paths to the NHDPlusV2 gpkg contents in rs_context.py to match the names of the 2022 Oregon snapshot.
+If you're running RS Context for a different region, you'll need to change this.
+If you're just running BRAT, this shouldn't matter.
 
 
 ### New Additions:
