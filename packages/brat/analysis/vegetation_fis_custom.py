@@ -26,10 +26,11 @@ from rscommons.database import write_db_attributes, write_db_dgo_attributes
 
 
 adjustment_types = ['scale', 'shape']
-'''Acceptable adjustment values:
-    # scale: a float value representing the scaling factor (e.g., 0.5 for compression, 2 for stretching)
-    # shape: no value. must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
-'''
+default_adjustment_values = {
+    'shift': 0.0,       # no shift
+    'scale': 1.0,       # no scaling
+    'shape': -1.0       # not used
+}
 
 
 def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = None, 
@@ -49,7 +50,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
     log.info('Processing {} vegetation'.format(label))
     log.info('Adjustment type: {}, value: {}'.format(adjustment_type, adjustment_value))
 
-    # handle adjustments
+    # handle adjustment parameters
     if adjustment_type:
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
@@ -58,6 +59,12 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_value = None
+        # convert NoneType adj_vals to defaults based on adj_type
+        adjustment_value_converted = adjustment_value
+        if adjustment_value_converted is None:
+            adjustment_value_converted = default_adjustment_values[adjustment_type]
+        # output folder for fis images
+        fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
 
     streamside_field = 'iVeg_30{}'.format(veg_type)
     riparian_field = 'iVeg100{}'.format(veg_type)
@@ -66,14 +73,16 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
     if not dgo:
         feature_values = load_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
-            calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field, adjustment_type, adjustment_value)
+            calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
+                                            adjustment_type, adjustment_value_converted, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_attributes(database, feature_values, [out_field])
     else:
         feature_values = load_dgo_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
-            calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field, adjustment_type, adjustment_value)
+            calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
+                                            adjustment_type, adjustment_value_converted, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_dgo_attributes(database, feature_values, [out_field])
@@ -84,7 +93,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
 
 # custom Veg FIS function that allows for sensitivity analysis adjustments
 def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str, riparian_field: str, out_field: str,
-                                    adj_type: str, adj_val: float):
+                                    adj_type: str, adj_val: float, fis_dir: str):
     """
     Adjustable beaver dam capacity vegetation FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -156,9 +165,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         for cat, abc in tri_centers.items():
             b = abc[1]      # we do not change the top of the triangle since we don't want to shift
             a = b - ((b - abc[0]) * adj_val)
-            c = b -((abc[2] - b) * adj_val)
-            riparian[cat] = fuzz.trimf(riparian.universe, a, b, c)
-            streamside[cat] = fuzz.trimf(streamside.universe, a, b, c)  # MFs are identical
+            c = b + ((abc[2] - b) * adj_val)
+            riparian[cat] = fuzz.trimf(riparian.universe, [a, b, c])
+            streamside[cat] = fuzz.trimf(streamside.universe, [a, b, c])  # MFs are identical
 
     elif adj_type == 'shape':
         log.info("Running custom-defined MF shapes.")
@@ -252,7 +261,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.ylabel('Membership')
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.show()
+    out_file_path = os.path.join(fis_dir, "fis-veg-riparian.png")
+    plt.savefig(out_file_path)
+    plt.close()
 
     # Streamside
     for label, color in zip(list(streamside.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
@@ -261,9 +272,12 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.ylabel('Membership')
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.show()
+    out_file_path = os.path.join(fis_dir, "fis-veg-streamside.png")
+    plt.savefig(out_file_path)
+    plt.close()
 
-    # Density
+    # Density - should remain unchanged
+    '''
     fig, axs = plt.subplots(1, 1, figsize=(12, 4))
     for label, color in zip(list(density.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         axs.plot(density.universe, density.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
@@ -272,8 +286,10 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.legend(title='Capacity:')
     plt.xlim(0, 40)
     plt.tight_layout()
-    plt.show()
-    
+    out_file_path = os.path.join(fis_dir, "fis-veg-density.png")
+    plt.savefig(out_file_path)
+    plt.close()
+    '''
 
 
 

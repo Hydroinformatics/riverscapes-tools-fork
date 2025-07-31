@@ -436,26 +436,33 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
     ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (21 lines)'''
     '''Acceptable adjustments:
-    # VEG TYPE: 'scale' or 'shape'
-    # VEG VALUE: single float
-    # COMB TYPE: 'shift', 'scale', or 'shape'
-    # COMB VALUE: list of floats, for MFs: [splow, sp2, slope]
+    # VEG TYPE: 'scale' or 'shape' or None
+    # VEG VALUE: float or None
+    # COMB TYPE: 'shift', 'scale', 'shape', or None
+    # COMB VALUE: list of floats or Nones, for MFs: [splow, sp2, slope]
     
     # shift: float representing the actual units to shift MF by (neg = left, pos = right)
     # scale: float representing the scaling factor ((0,1) = compress, >1 = stretch)
     # shape: must be adjusted manually within the custom FIS scripts
     '''
-    veg_adj_type = None
+    veg_adj_type = None      # 'scale' or 'shape'
     veg_adj_value = None
-    comb_adj_type = 'shift'
-    comb_adj_values = [-10, 0, 0]       # [splow, sp2, slope]
+    comb_adj_type = 'scale'        # 'shift' or 'scale' or 'shape'
+    comb_adj_values = [0.75, 0.75, 0.75]       # [splow, sp2, slope] - keep in list format even if all None
     
     log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
     log.info(f'Type = {veg_adj_type}')
     log.info(f'Value = {veg_adj_value}')
     log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
     log.info(f'Type = {comb_adj_type}')
-    log.info(f'Values = {comb_adj_values}')
+    log.info(f'Values: SPlow = {comb_adj_values[0]}, SP2 = {comb_adj_values[1]}, Slope = {comb_adj_values[2]}')
+    
+    fis_dir_path = os.path.join(output_folder, "fis/")
+    if os.path.exists(fis_dir_path):
+        log.info(f"FIS directory already exists at {fis_dir_path}")
+    else:
+        os.mkdir(fis_dir_path)
+        log.info(f"Created FIS directory at {fis_dir_path}")
 
     for epoch, prefix, ltype, orig_id in Epochs:
 
@@ -477,24 +484,28 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         output_vegetation_raster(outputs_gpkg_path, orig_raster, veg_suit_raster, epoch, prefix, ecoregion)
 
     ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (15 lines)'''
-    # Record type of FIS SA adjustment in a separate table just for records
+    # Log FIS adjustments in a separate table just for records
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Recording adjustments...')
         create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
         database.curs.execute(create_stmt)
-        # insert
-        comb_adj_values = [None, None, None] if not comb_adj_values else comb_adj_values
+        
+        # prepare data to log
+        comb_adj_types_log = [None, None, None]     # need for distinct db entries
+        for i in range(len(comb_adj_types_log)):
+            comb_adj_types_log[i] = comb_adj_type if comb_adj_values[i] is not None else None
         adjustment_data = [
             ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_value],
             ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_value],
-            ["Combined FIS", "SPlow", comb_adj_type, comb_adj_values[0]],
-            ["Combined FIS", "SP2", comb_adj_type, comb_adj_values[1]],
-            ["Combined FIS", "Slope", comb_adj_type, comb_adj_values[2]],
-            ]
-            
+            ["Combined FIS", "SPlow", comb_adj_types_log[0], comb_adj_values[0]],
+            ["Combined FIS", "SP2", comb_adj_types_log[1], comb_adj_values[1]],
+            ["Combined FIS", "Slope", comb_adj_types_log[2], comb_adj_values[2]],
+        ]
+        # insert
         database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
         database.conn.commit()
     
+
 
     # Calculate departure from historical conditions
     with SQLiteCon(outputs_gpkg_path) as database:

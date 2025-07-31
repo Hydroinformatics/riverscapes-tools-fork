@@ -25,14 +25,11 @@ from rscommons import ProgressBar, Logger, dotenv
 
 
 adjustment_types = ['shift', 'scale', 'shape']
-'''Acceptable adjustment values:
-    # shift: a list of floats representing the actual units to shift each MF by: [splow, sp2, slope].
-    #           Negative = shift left. Positive = shift right.
-    # scale: a list of floats representing the scaling factors for each MF: [splow, sp2, slope].
-    #           (e.g., 0.5 for compression, 2 for stretching)
-    # shape: must be adjusted manually within this script by changing the MFs in calculate_vegetation_fis_custom()
-'''
-
+default_adjustment_values = {
+    'shift': 0.0,       # no shift
+    'scale': 1.0,       # no scaling
+    'shape': -1.0       # not used
+}
 
 def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
                  adjustment_type: str = None, adjustment_values: list = None):
@@ -50,18 +47,27 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     log = Logger('Combined FIS')
     log.info('Processing {} vegetation'.format(label))
     
-    # handle adjustments
+    # handle adjustment parameters
     if adjustment_type:
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
         if not adjustment_values and adjustment_type != 'shape':
             raise ValueError(f"Please provide adjustment values: list of [splow, sp2, slope] shift amounts or scale factors.")
-        if adjustment_type == 'scale' and [val <= 0 for val in adjustment_values]:
-            raise ValueError(f"Invalid scale factor: {adjustment_values}. Must be greater than 0.")
+        if adjustment_type == 'scale':
+            for val in adjustment_values:
+                if val <= 0:
+                    raise ValueError(f"Invalid scale factor: {adjustment_values}. Must be greater than 0.")
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_values = None
-
+        # convert NoneType adj_vals to defaults based on adj_type
+        adjustment_values_converted = adjustment_values
+        for i in range(len(adjustment_values_converted)):
+            if adjustment_values_converted[i] is None:
+                adjustment_values_converted[i] = default_adjustment_values[adjustment_type]
+        # output folder for fis images
+        fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
+    
     veg_fis_field = 'oVC_{}'.format(veg_type)
     capacity_field = 'oCC_{}'.format(veg_type)
     dam_count_field = 'mCC_{}_CT'.format(veg_type)
@@ -71,14 +77,16 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     if not dgo:
         reaches = load_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
-            calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area, adjustment_type, adjustment_values)
+            calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
+                                          adjustment_type, adjustment_values_converted, fis_dir)
         else:
             calculate_combined_fis(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_attributes(database, reaches, [capacity_field, dam_count_field], log)
     else:
         feature_values = load_dgo_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
-            calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area, adjustment_type, adjustment_values)
+            calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
+                                          adjustment_type, adjustment_values_converted, fis_dir)
         else:
             calculate_combined_fis(feature_values, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_dgo_attributes(database, feature_values, [capacity_field, dam_count_field], log)
@@ -87,7 +95,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
 
 
 def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capacity_field: str, dam_count_field: str, max_drainage_area: float,
-                                  adj_type: str = None, adj_vals: list = [1.0, 1.0, 1.0]):
+                                  adj_type: str, adj_vals: list, fis_dir: str):
     """
     Calculate dam capacity and density using combined FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -174,8 +182,8 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600+c2, 2400+c2, 10000, 10000])
 
         c3 = adj_vals[2]
-        slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002+c3, 0.005+c3])
-        slope['can'] = fuzz.trapmf(slope.universe, [0.0002+c3, 0.005+c3, 0.12+c3, 0.15+c3])
+        slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002, 0.005])      # do not shift tiny 'flat' MF
+        slope['can'] = fuzz.trapmf(slope.universe, [0.0002, 0.005, 0.12+c3, 0.15+c3])   # treat as left edge
         slope['probably'] = fuzz.trapmf(slope.universe, [0.12+c3, 0.15+c3, 0.17+c3, 0.23+c3])
         slope['cannot'] = fuzz.trapmf(slope.universe, [0.17+c3, 0.23+c3, 1, 1])
     
@@ -193,7 +201,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
             'splow': [
                 ['can', [0, 0, 150, 175]],
                 ['probably', [150, 175, 180, 190]],
-                ['cannot', [80, 190, 10000, 10000]]
+                ['cannot', [180, 190, 10000, 10000]]
             ],
             'sp2': [
                 ['persists', [0, 0, 1000, 1200]],
@@ -230,7 +238,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
             scale = adj_vals[1]
             b = abc[1]
             a = b - ((b - abc[0]) * scale)
-            c = b -((abc[2] - b) * scale)
+            c = b + ((abc[2] - b) * scale)
             sp2[cat] = fuzz.trimf(sp2.universe, [a, b, c])
         
     elif adj_type == 'shape':
@@ -384,8 +392,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
 
     '''VISUALIZE MFS'''
     log.info('Visualizing Adjusted MFs...')
-
-    # oVC
+    
+    # oVC - should remain unchanged
+    '''
     for label, color in zip(list(ovc.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         plt.plot(ovc.universe, ovc.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
     plt.xlabel('Dam Density (dams/km) from Veg FIS')
@@ -393,8 +402,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend(title='Capacity:')
     plt.xlim(0, 40)
     plt.tight_layout()
-    plt.show()
-
+    out_file_path = os.path.join(fis_dir, "fis-comb-ovc.png")
+    plt.savefig(out_file_path)
+    plt.close()
+    '''
     # SPLow
     for label, color in zip(list(splow.terms.keys()), ['g', 'y', 'r']):
         plt.plot(splow.universe, splow.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
@@ -403,7 +414,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(100, 250)
     plt.tight_layout()
-    plt.show()
+    out_file_path = os.path.join(fis_dir, "fis-comb-SPlow.png")
+    plt.savefig(out_file_path)
+    plt.close()
 
     # SP2
     for label, color in zip(list(sp2.terms.keys()), ['g', 'y', 'orange', 'r']):
@@ -413,7 +426,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(500, 3000)
     plt.tight_layout()
-    plt.show()
+    out_file_path = os.path.join(fis_dir, "fis-comb-SP2.png")
+    plt.savefig(out_file_path)
+    plt.close()
 
     # Slope
     for label, color in zip(list(slope.terms.keys()), ['b', 'g', 'y', 'r']):
@@ -423,9 +438,12 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(0, 0.5)
     plt.tight_layout()
-    plt.show()
+    out_file_path = os.path.join(fis_dir, "fis-comb-slope.png")
+    plt.savefig(out_file_path)
+    plt.close()
 
-    # Density
+    # Density - should remain unchanged
+    '''
     fig, axs = plt.subplots(1, 1, figsize=(12, 4))
     for label, color in zip(list(density.terms.keys()), ['r', 'orange', 'y', 'g', 'b']):
         axs.plot(density.universe, density.terms[label].mf, color=color, linewidth=1.5, label=label.capitalize())
@@ -434,8 +452,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend(title='Capacity')
     plt.xlim(0, 40)
     plt.tight_layout()
-    plt.show()
-    
+    out_file_path = os.path.join(out_dir, "fis-comb-output-density.png")
+    plt.savefig(out_file_path)
+    plt.close()
+    '''
     progbar.finish()
     log.info('Done')
 
