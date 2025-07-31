@@ -1,7 +1,8 @@
 # Riverscapes Tools - Fork
 
-This is a monorepo housing the python open-source GIS tools for Riverscapes.
-It is a fork that includes some tweaks needed to run the tools locally.
+This is a monorepo housing the python open-source GIS tools for Riverscapes.  
+It is a fork that includes some tweaks needed to run the tools locally.  
+This fork is NOT intended to initiate pull requests or contribute to riverscapes development. It is an independent research project, forked for convenience and to give credit.   
 See the [original repo](https://github.com/Riverscapes/riverscapes-tools) for the latest changes and fully original code.
 
 ## How to Use sqlBRAT
