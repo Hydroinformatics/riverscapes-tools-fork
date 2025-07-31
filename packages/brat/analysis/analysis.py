@@ -33,8 +33,7 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
-
-
+    
     suitability_distribution(database, out_dir)
     input_distributions(database, out_dir)
     output_distribution(database, out_dir)

@@ -36,90 +36,81 @@ def analyze(database, out_dir):
 
 def capacity_comparison_bars(database, out_dir):
     """
-    Generate histograms of iVeg_30EX and iVeg100EX (mean veg suitabilities for each reach)
-    :param database: path to different-huc combined BRAT database
+    Generate stacked bar charts of oCC_EX for each huc in the database
+    :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
     :param out_dir: optional path to a folder to save plots to
     """
 
-    vars = {
-        'iVeg_30EX': 'Streamside (30m) vegetation suitability',
-        'iVeg100EX': 'Riparian (100m) vegetation suitability'
+    # we want to create a stacked bar chart, where each bar is a huc, and the stacks are oCC_EX categories
+    # we need to get all reach's oCC_EX data for each huc
+    # for each huc, we need to compile the oCC_EX similar to brat report. we want to count how many reaches fall into each category, then summarize as %
+    # with the data, we can generate our plot 
+
+    table_name = "CombinedOutputs"      # change this if your db's main table has a different name
+
+    custom_huc_names = {        # customize this to your WatershedIDs
+        '1710020407': 'Lower Siletz',
+        '1710020405': 'Middle Siletz',
+        '1710020404': 'Upper Siletz',
+        '1710020406': 'Rock Creek',
     }
 
-    # Generate histograms
-    for var, descr in vars.items():
-        var_data = select_var(database, var)
-        plt.hist(var_data, bins=10, edgecolor='black')
-        plt.xlabel(var)
-        plt.title(f"{descr} Distribution")
-        print(f"...Plot for {var} generated...")
+    categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
 
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "suitability-distribution-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-
-def input_distributions(database, out_dir):
-    """
-    Generate histograms of the distribution of certain input variables
-        for reaches with Frequent or Pervasive dams (oCC_EX > 5)
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-    x_vars = [
-        # ('var name', 'description', num_bins, x_scalar)
-        # note: set x_scalar to 1.00 if you want the full histogram
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, 1.00),
-        ('iHyd_SP2', 'Peak Flow (watts)', 50, 0.5),
-        ('iGeo_Slope', 'Stream Slope', 50, 1.00),
-        ('iGeo_DA', 'Upstream Drainage Area (sq km)', 50, 0.005)
+    oCC_cutoffs = [
+        {'label': categories[0], 'upper': 0},
+        {'label': categories[1], 'lower': 0, 'upper': 1},
+        {'label': categories[2], 'lower': 1, 'upper': 5},
+        {'label': categories[3], 'lower': 5, 'upper': 15},
+        {'label': categories[4], 'lower': 15}
     ]
 
-    capacity_data = select_var(database, 'oCC_EX')
+    # to store data for stacked bar chart
+    x_data = []
+    y_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
 
-    for var, descr, num_bins, x_scalar in x_vars:
-        var_data = select_var(database, var)
-        # filter data to high capacity
-        pairs = dict(zip(var_data, capacity_data))
-        filtered_pairs = {var: cap for var, cap in pairs.items() if cap > 5}
 
-        # plot
-        plt.hist(filtered_pairs.keys(), bins=num_bins)
-        plt.xlabel(descr)
-        plt.ylabel('Count')
-        plt.title("Distribution of {} at Frequent/Pervasive reaches".format(var))
-        print("...{}-bin histogram for {} generated...".format(num_bins, var))
+    # figure out what hucs we are working with
+    hucs = select_var(database, table_name, 'WatershedID')
+    print(f"Found {len(hucs)} unique HUCs in db.")
 
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "input-distribution-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
+    for huc in hucs:
+        print(f"Processing HUC {huc}...")
+        # append huc or custom name to x array for bar chart
+        x_data.append(custom_huc_names[huc] if custom_huc_names[huc] else huc)
 
-        if x_scalar != 1.00:
-            # simply remove pairs past the x-cutoff
-            cutoff = max(filtered_pairs.keys())*x_scalar
-            filtered_pairs = {var: cap for var, cap in filtered_pairs.items() if var < cutoff}
-            # plot
-            plt.hist(filtered_pairs.keys(), bins=num_bins)
-            plt.xlabel(descr)
-            plt.ylabel('Count')
-            plt.title("[subset] Distribution of {} at Frequent/Pervasive reaches".format(var))
-            print("...{}-bin histogram for {} generated...".format(num_bins, var))
+        huc_data = select_var(database, table_name, 'oCC_EX', f'WHERE WatershedID = {huc}')
+        huc_total = len(huc_data)
 
-            if out_dir is not None:
-                print(f"...Saving plot to output dir...")
-                out_file_path = os.path.join(out_dir, "input-distribution-{}-zoomed.png".format(var))
-                plt.savefig(out_file_path)
-                plt.close()
-            else:
-                plt.show()
+        for cat in oCC_cutoffs:
+            lower = cat['lower'] if cat['lower'] else None
+            upper = cat['upper'] if cat['upper'] else None
+            filtered = huc_data
+            if lower:
+                filtered = [val for val in filtered if val > lower]
+            if upper:
+                filtered = [val for val in filtered if val <= upper]
+            
+            percent = round((len(filtered) / huc_total), 1)
+            y_data[cat].append(percent)
+    
+    # now construct bar chart
+    fig, ax = plt.subplots()
+    bottom = np.zeros(len(x_data))
+
+    for cat in categories:      # build one layer at a time
+        ax.bar(x_data, y_data[cat], label=cat, bottom=bottom)
+        bottom += y_data[cat]
+    
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "oCC_EX-stacked-bar.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+
 
 
 
@@ -128,18 +119,17 @@ def input_distributions(database, out_dir):
     
 
 
-def select_var(database: str, table: str, var: str):
+def select_var(database: str, table: str, var: str, arg: str = ''):
     """
     Utility function to return column of values for a specified feature
     :param database: path to a BRAT database (.gpkg)
     :param var: database name of the feature to be returned"""
 
-    conn = sqlite3.connect(database)
-    curs = conn.cursor()
-    curs.execute(f'SELECT {var} FROM {table}')
-    result = curs.fetchall()
-    var_data = [row[0] for row in result]   # convert to list of ints from tuples
-    curs.close()
+    with sqlite3.connect(database) as conn:
+        curs = conn.cursor()
+        curs.execute(f'SELECT {var} FROM {table} {arg}')
+        result = curs.fetchall()
+        var_data = [row[0] for row in result]   # convert to list of ints from tuples
 
     print("Obtained {} {} values from database...".format(len(var_data), var))
     return var_data
