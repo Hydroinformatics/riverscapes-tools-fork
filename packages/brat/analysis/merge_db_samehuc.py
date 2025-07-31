@@ -20,7 +20,6 @@ July 2025
 import os
 import statistics
 import sqlite3
-import numpy as np
 
 # --- CONFIGURATION ---
 
@@ -28,11 +27,20 @@ import numpy as np
 source_dbs = {
     # 'path to db': 'shorthand label'
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg': 'ST',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'Lspl',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'Rspl',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'Lsp2',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Right/outputs/brat.gpkg': 'Rsp2',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Left/outputs/brat.gpkg': 'Lslo',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'LEspl',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'RTspl',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'LEsp2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Right/outputs/brat.gpkg': 'RTsp2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Left/outputs/brat.gpkg': 'LEslo',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Right/outputs/brat.gpkg': 'RTslo',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Compress/outputs/brat.gpkg': 'CPveg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Stretch/outputs/brat.gpkg': 'STveg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Compress/outputs/brat.gpkg': 'CPcomb',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Stretch/outputs/brat.gpkg': 'STcomb',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Compress/outputs/brat.gpkg': 'CPboth',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Stretch/outputs/brat.gpkg': 'STboth',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Veg/outputs/brat.gpkg': 'CVveg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Comb/outputs/brat.gpkg': 'CVcomb',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg': 'CVboth'
 }
 # ReachIDs should be equal in all source dbs
@@ -56,8 +64,9 @@ new_db_name = 'brat-all-fis.db'
 new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/fis-runs-processed/'                        # SET THIS
 new_table_name = 'CombinedOutputs'
 
-# Add a table to the database summarizing the mean, st.dev, etc. of each column for all reaches
-stats_table = True
+# Useful supplemental tables.
+stats_table = True      # summarizes mean, st.dev, etc. of each column for all reaches
+adjustments_table = True    # summarizes the FIS adjustments made in each source db
 
 
 
@@ -67,10 +76,6 @@ new_db_path = os.path.join(new_db_dir, new_db_name)
 
 with sqlite3.connect(new_db_path) as conn:
     cur = conn.cursor()
-
-    # Drop tables if they exists (for repeatable runs)
-    cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
-    if stats_table: cur.execute("DROP TABLE IF EXISTS Stats")
 
     # Useful row and column lists and strings
     ind_cols = columns_to_copy_once
@@ -85,11 +90,9 @@ with sqlite3.connect(new_db_path) as conn:
     new_all_cols = ind_cols + new_dep_cols
     new_all_cols_stmt = ', '.join(new_all_cols)
 
-    # Create table(s)
+    # Create main table
+    cur.execute(f"DROP TABLE IF EXISTS {new_table_name}")
     cur.execute(f"CREATE TABLE {new_table_name} ({new_all_cols_stmt})")
-    if stats_table:
-        stat_cols = ["Mean", "St_Dev", "Min", "Max"]
-        cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")     # stats table is pivoted
     conn.commit()
 
     # Populate new db. Gather relevant data and store
@@ -120,14 +123,19 @@ with sqlite3.connect(new_db_path) as conn:
     print(insert_stmt)
     cur.executemany(insert_stmt, data)
 
-    print(f"Inserted {len(ind_rows)} rows of data for all columns")
     conn.commit()
+    print(f"Inserted {len(ind_rows)} rows of data for all columns")
 
-    # Populate stats table if requested
+
+    # —— Populate stats table if requested ——
     if stats_table:
         print(f"Processing all reaches into Stats table...")
-        results = {stat: [] for stat in stat_cols}    # to hold results for each stat
-
+        
+        stat_cols = ["Mean", "St_Dev", "Min", "Max"]
+        cur.execute("DROP TABLE IF EXISTS Stats")
+        cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")
+        
+        results = {stat: [] for stat in stat_cols}    # Mean: [means for each col], ...
         # compute stats
         for col in new_dep_cols:
             cur.execute(f"SELECT AVG({col}), MIN({col}), MAX({col}) FROM {new_table_name}")
@@ -146,17 +154,72 @@ with sqlite3.connect(new_db_path) as conn:
                 stdev = None
             results["St_Dev"].append(stdev)
 
-        # insert a row for each dependent column
+        # insert a row for each dependent column (source data)
         # stats are columns
+        placeholders = ', '.join(['?'] * (1 + len(stat_cols)))
         for i in range(len(new_dep_cols)):
             row = []
-            row.append(new_dep_cols[i])
+            row.append(new_dep_cols[i])     # label
             for stat in stat_cols:
                 row.append(results[stat][i])
-            placeholders = ', '.join(['?'] * (len(row)))
             cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
         
         conn.commit()
+        print(f"Stats table populated successfully.")
+        
+        
+    # ——— Populate adj table if requested
+    if adjustments_table:
+        print(f"Summarizing source databases into Adjustments Table...")
+        
+        adj_cols = ["Veg_Type", "Veg_Val", "Comb_Type", "Comb_SPlow_Val", "Comb_SP2_Val", "Comb_Slope_Val"]
+        cur.execute("DROP TABLE IF EXISTS Adjustments")
+        cur.execute(f"CREATE TABLE Adjustments (Label, {', '.join(adj_cols)})")
+        
+        adj_data = {label: {col: None for col in adj_cols} for label in new_dep_cols}   # oVC_EX_ST: [Veg_Type, Veg_Val, Comb_Type, ...], ...
+        # get adjustment data from each source db
+        for db in source_dbs:
+            with sqlite3.connect(db) as src_conn:
+                src_cur = src_conn.cursor()
+                # know which labels correspond to this db
+                db_shorthand = source_dbs[db]
+                db_labels = [col for col in new_dep_cols if db_shorthand in col]
+                # check for source FIS_Adjustments table
+                src_cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='FIS_Adjustments'")
+                fis_table = src_cur.fetchall()
+                if fis_table == []:
+                    print(f"FIS table not found for database {db}. Inserting NULLs...")
+                    continue    # skip this db
+                # assuming table exists, get data
+                src_cur.execute(f"SELECT FIS, MF, Adj_Type, Adj_Value FROM FIS_Adjustments")
+                db_fis_data = src_cur.fetchall()    # [(FIS, MF, Adj_Type, Adj_Value), (FIS, ...), ...]
+
+                # extract FIS data and store it for the appropriate labels
+                for row in db_fis_data:
+                    if row[0] == "Vegetation FIS":
+                        for label in db_labels:
+                            if row[2] is not None:  # only store if non-Null Adj_Type
+                                adj_data[label]["Veg_Type"] = row[2]
+                                adj_data[label]["Veg_Val"] = row[3]
+                    elif row[0] == "Combined FIS":
+                        for label in db_labels:
+                            if row[2] is not None:
+                                adj_data[label]["Comb_Type"] = row[2]
+                                if row[1] == "SPlow": adj_data[label]["Comb_SPlow_Val"] = row[3]
+                                if row[1] == "SP2": adj_data[label]["Comb_SP2_Val"] = row[3]
+                                if row[1] == "Slope": adj_data[label]["Comb_Slope_Val"] = row[3]
+            
+        # now insert all data for all dbs
+        # rows are source data labels (main table dep columns)
+        # we will have redundancy but the label rows will match the stats table and main table cols
+        placeholders = ', '.join(['?'] * (1 + len(adj_cols)))
+        for label, data in adj_data.items():
+            insert_stmt = f"INSERT INTO Adjustments VALUES ({placeholders})"
+            row = [label] + [data.get(val) for val in adj_cols]
+            cur.execute(insert_stmt, row)
+
+        conn.commit()
+        print(f"Adjustments table populated successfully.")
 
 
 print("Merging complete! Data is in", new_db_path)
