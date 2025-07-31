@@ -56,15 +56,11 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         if adjustment_type == 'scale':
             for val in adjustment_values:
                 if val <= 0:
-                    raise ValueError(f"Invalid scale factor: {adjustment_values}. Must be greater than 0.")
+                    raise ValueError(f"Invalid scale factor: {val}. Must be greater than 0.")
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_values = None
-        # convert NoneType adj_vals to defaults based on adj_type
-        adjustment_values_converted = adjustment_values
-        for i in range(len(adjustment_values_converted)):
-            if adjustment_values_converted[i] is None:
-                adjustment_values_converted[i] = default_adjustment_values[adjustment_type]
+
         # output folder for fis images
         fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
     
@@ -78,7 +74,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         reaches = load_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, adjustment_values_converted, fis_dir)
+                                          adjustment_type, adjustment_values, fis_dir)
         else:
             calculate_combined_fis(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_attributes(database, reaches, [capacity_field, dam_count_field], log)
@@ -86,7 +82,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         feature_values = load_dgo_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, adjustment_values_converted, fis_dir)
+                                          adjustment_type, adjustment_values, fis_dir)
         else:
             calculate_combined_fis(feature_values, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_dgo_attributes(database, feature_values, [capacity_field, dam_count_field], log)

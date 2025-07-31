@@ -54,15 +54,13 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
     if adjustment_type:
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
-        if adjustment_value <= 0:
-            raise ValueError(f"Invalid adjustment value: {adjustment_value}. Must be greater than 0.")
+        if adjustment_type == 'scale':
+            if adjustment_value <= 0:
+                raise ValueError(f"Invalid adjustment value scale factor: {adjustment_value}. Must be greater than 0.")
         if adjustment_type == 'shape':
             log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
             adjustment_value = None
-        # convert NoneType adj_vals to defaults based on adj_type
-        adjustment_value_converted = adjustment_value
-        if adjustment_value_converted is None:
-            adjustment_value_converted = default_adjustment_values[adjustment_type]
+
         # output folder for fis images
         fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
 
@@ -74,7 +72,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         feature_values = load_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
             calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
-                                            adjustment_type, adjustment_value_converted, fis_dir)
+                                            adjustment_type, adjustment_value, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_attributes(database, feature_values, [out_field])
@@ -82,7 +80,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         feature_values = load_dgo_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
             calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
-                                            adjustment_type, adjustment_value_converted, fis_dir)
+                                            adjustment_type, adjustment_value, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_dgo_attributes(database, feature_values, [out_field])

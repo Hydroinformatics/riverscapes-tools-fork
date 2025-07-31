@@ -447,8 +447,8 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
     '''
     veg_adj_type = None      # 'scale' or 'shape'
     veg_adj_value = None
-    comb_adj_type = 'scale'        # 'shift' or 'scale' or 'shape'
-    comb_adj_values = [0.75, 0.75, 0.75]       # [splow, sp2, slope] - keep in list format even if all None
+    comb_adj_type = None        # 'shift' or 'scale' or 'shape'
+    comb_adj_values = [None, None, None]       # [splow, sp2, slope] - keep in list format even if all None
     
     log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
     log.info(f'Type = {veg_adj_type}')
