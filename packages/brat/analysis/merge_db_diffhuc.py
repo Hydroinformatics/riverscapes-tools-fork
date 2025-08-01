@@ -39,9 +39,9 @@ source_dbs = [
 source_table = 'ReachAttributes'
 
 # Columns to copy (must exist in all source tables)
-columns_to_copy = [
+columns_to_copy = [     # will be cast to REAL
     'WatershedID',
-    'iGeo_Slope', 
+    'iGeo_Slope', 'iGeo_Len',
     'iVeg100EX', 'iVeg_30EX',
     'iVeg100HPE', 'iVeg_30HPE',
     'iHyd_Qlow', 'iHyd_Q2',
@@ -112,7 +112,7 @@ with sqlite3.connect(new_db_path) as conn:
 
 
     # Build CREATE TABLE statement
-    col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Use REAL for numeric, change as needed
+    col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Cast all to REAL
     if track_source:
         col_defs += ', SourceDB TEXT'
     create_stmt = f"CREATE TABLE {new_table} ({col_defs})"
@@ -197,7 +197,7 @@ with sqlite3.connect(new_db_path) as conn:
             for col, operation in cols_to_summarize.items():
                 cur.execute(f"SELECT {operation}({col}), WatershedID FROM {new_table} WHERE WatershedID = {huc}")
                 result = [val[0] for val in cur.fetchall()]     # don't store WatershedID
-                result = round(result[0], 2)    # convert from list to single number
+                result = round(result[0], 2)    # convert from list [float] to rounded float
                 row_data.append(result)
                 print(f"Selected {operation}({col}) = {result} for HUC {huc} in {new_table}")
             
@@ -208,34 +208,42 @@ with sqlite3.connect(new_db_path) as conn:
                 label = cat['label']
                 lower = cat['lower'] if 'lower' in cat else None
                 upper = cat['upper'] if 'upper' in cat else None
-                where_clause = ''
-                sql_args = []
-
+                extra_clauses = []
+                extra_args = []
                 if lower is not None:
-                    where_clause = ' (oCC_EX > ?)'
-                    sql_args.append(lower)
-
+                    extra_clauses.append('r.oCC_EX > ?')
+                    extra_args.append(lower)
                 if upper is not None:
-                    if len(where_clause) > 0:
-                        where_clause += ' AND '
-                    sql_args.append(upper)
+                    extra_clauses.append('r.oCC_EX <= ?')
+                    extra_args.append(upper)
 
-                    where_clause += ' (oCC_EX <= ?) '
+                # Build the WHERE clause
+                where_sql = 'r.WatershedID = ?'
+                if extra_clauses:
+                    where_sql += ' AND ' + ' AND '.join(extra_clauses)
 
-                cur.execute(f"""SELECT (0.1 * sum(iGeo_Len) / t.total_length) Percent
-                            FROM {new_table} r,
-                            (select sum(igeo_len) / 1000 total_length from {new_table}) t
-                            WHERE {where_clause}""", sql_args)
+                # Use JOIN for denominator clarity
+                cur.execute(f"""
+                    SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
+                    FROM {new_table} r
+                    JOIN (
+                        SELECT SUM(iGeo_Len) / 1000 AS total_length
+                        FROM {new_table}
+                        WHERE WatershedID = ?
+                    ) t ON 1=1
+                    WHERE {where_sql}
+                """, [huc, huc] + extra_args)
                 row = cur.fetchone()
-                row_data.append(row['Percent'] or None)
-                print(f"Caulcated {row['Percent']}% of reaches in {cat} category")
+                percent = round(row[0], 2) if row and row[0] is not None else None
+                row_data.append(percent)
+                print(f"Calculated {percent}% of reaches in {cat['label']} category")
             
             # insert data
             placeholders = ', '.join(['?'] * len(row_data))
             insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
             cur.execute(insert_stmt, row_data)
-
-        conn.commit()   
+            conn.commit()   
+        
         print("Stats table complete.")
 
 
