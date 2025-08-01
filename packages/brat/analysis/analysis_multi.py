@@ -48,19 +48,7 @@ def capacity_comparison_bars(database, out_dir):
     :param out_dir: optional path to a folder to save plots to
     """
 
-    # we want to create a stacked bar chart, where each bar is a huc, and the stacks are oCC_EX categories
-    # we need to get all reach's oCC_EX data for each huc
-    # for each huc, we need to compile the oCC_EX similar to brat report. we want to count how many reaches fall into each category, then summarize as %
-    # with the data, we can generate our plot 
-
-    table_name = "ReachAttributes"      # change this if your db's main table has a different name
-
-    custom_huc_names = {        # customize this to your WatershedIDs
-        '1710020407': 'Lower Siletz',
-        '1710020405': 'Middle Siletz',
-        '1710020404': 'Upper Siletz',
-        '1710020406': 'Rock Creek',
-    }
+    # we already have % category values assuming the "Stats" table was made in combined db
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
     
@@ -72,13 +60,7 @@ def capacity_comparison_bars(database, out_dir):
         categories[4]: '#005ce6',
     }
 
-    oCC_cutoffs = [
-        {'label': categories[0], 'upper': 0},
-        {'label': categories[1], 'lower': 0, 'upper': 1},
-        {'label': categories[2], 'lower': 1, 'upper': 5},
-        {'label': categories[3], 'lower': 5, 'upper': 15},
-        {'label': categories[4], 'lower': 15}
-    ]
+    stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
 
     # to store data for stacked bar chart
     x_data = []
@@ -88,40 +70,26 @@ def capacity_comparison_bars(database, out_dir):
         cur = conn.cursor()
 
         # figure out what hucs we are working with
-        cur.execute(f"SELECT DISTINCT WatershedID FROM {table_name}")
-        hucs = [row[0] for row in cur.fetchall()]   # convert to list of ints
-        print(f"Found {len(hucs)} distinct HUCs in db.")
+        cur.execute(f"SELECT WatershedID, HUC_Name FROM Stats")
+        hucs = cur.fetchall()       # list of (id, name)
+        print(f"Found {len(hucs)} HUCs.")
 
-        for huc in hucs:
+        for huc, name in hucs:
             print(f"Processing HUC {huc}...")
             # append huc or custom name to x array for bar chart
-            if huc in custom_huc_names.keys():
-                x_data.append(custom_huc_names[huc])
+            if name is not None:
+                x_data.append(f"{name}")
             else:
-                x_data.append(huc)
+                x_data.append(f"{huc}")
 
-            cur.execute(f"SELECT oCC_EX, WatershedID FROM {table_name} WHERE WatershedID = {huc};")
-            cap_data = [val[0] for val in cur.fetchall()]   # only store oCC_EX
-            huc_total = len(cap_data)
-            print(f"Selected {huc_total} reaches corresponding to HUC {huc}")
-
-            for cat in oCC_cutoffs:
-                label = cat['label']
-                lower = cat['lower'] if 'lower' in cat.keys() else None
-                upper = cat['upper'] if 'upper' in cat.keys() else None
-                
-                # Filter to values within this category
-                if lower is not None and upper is not None:
-                    filtered = [val for val in cap_data if lower < val <= upper]
-                elif lower is not None:
-                    filtered = [val for val in cap_data if val > lower]
-                elif upper is not None:
-                    filtered = [val for val in cap_data if val <= upper]
-                else:
-                    filtered = cap_data  # fallback, should not happen
-
-                percent = round((100 * len(filtered) / huc_total), 1)
-                y_data[label].append(percent)
+            # now select the % values for each category for this HUC
+            cur.execute(f"SELECT WatershedID, {', '.join(stat_cols)} FROM Stats WHERE WatershedID = {huc}")
+            cap_data = [row[1:] for row in cur.fetchall()]   # store everything except WatershedID
+            print(f"For HUC {huc}, selected percents = {cap_data}")
+            
+            # store data
+            for i in range(len(categories)):
+                y_data[categories[i]].append(cap_data[i])
     
     # now construct bar chart
     fig, ax = plt.subplots()
