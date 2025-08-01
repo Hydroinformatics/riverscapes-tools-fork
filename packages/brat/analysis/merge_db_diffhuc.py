@@ -22,7 +22,7 @@ July 2025
 # - add Stats table comparing the different HUCs (Mean, total cap, % each category?)
 
 
-
+import os
 import sqlite3
 
 # --- CONFIGURATION ---
@@ -62,8 +62,9 @@ lookup_tables_to_copy = [
     'DamCapacities'
 ]
 
-# Name of the new database and table
-new_db = 'brat-all-siletz-custom.db'
+# New database output directory, name, and main table name
+new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/public-runs-processed'
+new_db_name = 'brat-all-siletz-custom.db'
 new_table = 'CombinedOutputs'
 
 # Options - column to track the source database? summary table?
@@ -74,7 +75,8 @@ stats_table = True
 # --- SCRIPT STARTS HERE ---
 
 # Create the new database and table
-with sqlite3.connect(new_db) as conn:
+new_db_path = os.path.join(new_db_dir, new_db_name)
+with sqlite3.connect(new_db_path) as conn:
     cur = conn.cursor()
 
     # Drop tables if they exists (for repeatable runs)
@@ -146,10 +148,10 @@ with sqlite3.connect(new_db) as conn:
         print("Creating Stats table to summarize results by HUC...")
 
         custom_huc_names = {        # customize this to your WatershedIDs
-            '1710020407': 'Lower Siletz',
-            '1710020405': 'Middle Siletz',
-            '1710020404': 'Upper Siletz',
-            '1710020406': 'Rock Creek',
+            1710020407: 'Lower Siletz',
+            1710020405: 'Middle Siletz',
+            1710020404: 'Upper Siletz',
+            1710020406: 'Rock Creek'
         }
 
         categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
@@ -171,10 +173,11 @@ with sqlite3.connect(new_db) as conn:
 
         stat_cols = ["HUC", "Name"]
         stat_cols += [f"{op}_{col}" for col, op in cols_to_summarize.items()]
-        stat_cols += ["%_None", "%_Rare", "%_Occasional", f"%_Frequent", "%_Pervasive"]
+        stat_cols += ["None_Percent", "Rare_Percent", "Occasional_Percent", "Frequent_Percent", "Pervasive_Percent"]
 
         # create table
         cur.execute(f"DROP TABLE IF EXISTS Stats")
+        print(f"{', '.join(stat_cols)}")
         cur.execute(f"CREATE TABLE Stats ({', '.join(stat_cols)})")
 
         # figure out what hucs we are working with
@@ -186,13 +189,15 @@ with sqlite3.connect(new_db) as conn:
         for huc in hucs:
             print(f"Processing HUC {huc}...")
 
-            huc_name = custom_huc_names[huc] if huc in custom_huc_names.keys() else None
+            huc_name = custom_huc_names[int(huc)] if int(huc) in custom_huc_names.keys() else None
+            print(f"Custom HUC name: {huc_name}")
             row_data = [huc, huc_name]
 
             # first process cols_to_summarize for this huc
             for col, operation in cols_to_summarize.items():
                 cur.execute(f"SELECT {operation}({col}), WatershedID FROM {new_table} WHERE WatershedID = {huc}")
                 result = [val[0] for val in cur.fetchall()]     # don't store WatershedID
+                result = round(result[0], 2)    # convert from list to single number
                 row_data.append(result)
                 print(f"Selected {operation}({col}) = {result} for HUC {huc} in {new_table}")
             
@@ -219,6 +224,7 @@ with sqlite3.connect(new_db) as conn:
 
                 percent = round((100 * len(filtered) / huc_total), 1)
                 row_data.append(percent)
+                print(f"Caulcated {percent}% of reaches in {cat} category")
             
             # insert data
             placeholders = ', '.join(['?'] * len(row_data))
@@ -229,4 +235,4 @@ with sqlite3.connect(new_db) as conn:
         print("Stats table complete.")
 
 
-print("Merging complete! Data is in", new_db)
+print("Merging complete! Data is in", new_db_path)
