@@ -8,6 +8,13 @@ July 2025
 """
 
 
+
+# TODO:
+#   improper way to display % - just using counts of reaches, but they are different lengths
+#   use method in brat_report where we consider the iGeo_Length
+
+
+
 #imports
 import os
 import sys
@@ -46,7 +53,7 @@ def capacity_comparison_bars(database, out_dir):
     # for each huc, we need to compile the oCC_EX similar to brat report. we want to count how many reaches fall into each category, then summarize as %
     # with the data, we can generate our plot 
 
-    table_name = "CombinedOutputs"      # change this if your db's main table has a different name
+    table_name = "ReachAttributes"      # change this if your db's main table has a different name
 
     custom_huc_names = {        # customize this to your WatershedIDs
         '1710020407': 'Lower Siletz',
@@ -56,6 +63,14 @@ def capacity_comparison_bars(database, out_dir):
     }
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
+    
+    cat_colors = {      # from brat_report.py
+        categories[0]: '#f50000',
+        categories[1]: '#ffaa00',
+        categories[2]: '#f5f500',
+        categories[3]: '#4ce601',
+        categories[4]: '#005ce6',
+    }
 
     oCC_cutoffs = [
         {'label': categories[0], 'upper': 0},
@@ -74,38 +89,51 @@ def capacity_comparison_bars(database, out_dir):
 
         # figure out what hucs we are working with
         cur.execute(f"SELECT DISTINCT WatershedID FROM {table_name}")
-        hucs = cur.fetchall()
+        hucs = [row[0] for row in cur.fetchall()]   # convert to list of ints
         print(f"Found {len(hucs)} distinct HUCs in db.")
 
         for huc in hucs:
             print(f"Processing HUC {huc}...")
             # append huc or custom name to x array for bar chart
-            x_data.append(custom_huc_names[huc] if custom_huc_names[huc] else huc)
+            if huc in custom_huc_names.keys():
+                x_data.append(custom_huc_names[huc])
+            else:
+                x_data.append(huc)
 
-            cur.execute(f"SELECT oCC_EX FROM {table_name} WHERE WatershedID = {huc}")
-            huc_data = cur.fetchall()
-            huc_total = len(huc_data)
+            cur.execute(f"SELECT oCC_EX, WatershedID FROM {table_name} WHERE WatershedID = {huc};")
+            cap_data = [val[0] for val in cur.fetchall()]   # only store oCC_EX
+            huc_total = len(cap_data)
             print(f"Selected {huc_total} reaches corresponding to HUC {huc}")
 
             for cat in oCC_cutoffs:
-                lower = cat['lower'] if cat['lower'] else None
-                upper = cat['upper'] if cat['upper'] else None
-                filtered = huc_data
-                if lower:
-                    filtered = [val for val in filtered if val > lower]
-                if upper:
-                    filtered = [val for val in filtered if val <= upper]
+                label = cat['label']
+                lower = cat['lower'] if 'lower' in cat.keys() else None
+                upper = cat['upper'] if 'upper' in cat.keys() else None
                 
-                percent = round((len(filtered) / huc_total), 1)
-                y_data[cat].append(percent)
+                # Filter to values within this category
+                if lower is not None and upper is not None:
+                    filtered = [val for val in cap_data if lower < val <= upper]
+                elif lower is not None:
+                    filtered = [val for val in cap_data if val > lower]
+                elif upper is not None:
+                    filtered = [val for val in cap_data if val <= upper]
+                else:
+                    filtered = cap_data  # fallback, should not happen
+
+                percent = round((100 * len(filtered) / huc_total), 1)
+                y_data[label].append(percent)
     
     # now construct bar chart
     fig, ax = plt.subplots()
     bottom = np.zeros(len(x_data))
 
     for cat in categories:      # build one layer at a time
-        ax.bar(x_data, y_data[cat], label=cat, bottom=bottom)
+        p = ax.bar(x_data, y_data[cat], 0.7, label=cat, color=cat_colors[cat], bottom=bottom)
         bottom += y_data[cat]
+        ax.bar_label(p, label_type='center')
+    
+    ax.set_title("Percent breakdown of Existing Capacity across HUCs")
+    ax.legend()
     
     if out_dir is not None:
         print(f"...Saving plot to output dir...")

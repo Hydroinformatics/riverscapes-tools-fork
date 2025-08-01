@@ -19,6 +19,7 @@ July 2025
 
 # TODO:
 # - connect lookup tables to correct features in the new db
+# - add Stats table comparing the different HUCs (Mean, total cap, % each category?)
 
 
 
