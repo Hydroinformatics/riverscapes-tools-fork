@@ -73,58 +73,6 @@ adjustments_table = True    # summarizes the FIS adjustments made in each source
 
 
 
-# --- HELPER FUNCTION ---
-def calculate_capacity_percents(db, table, cat_cutoffs, var: str, huc: float) -> list:
-    """ Returns list of the percent of watershed in each category (e.g. % None, % Rare, ...)
-    :param cat_cutoffs: a list of dictionaries (containing label, and lower or/and upper) for each category
-    :param var: the name of the variable to select
-    :param huc: the huc (WatershedID) to process
-    """
-    # Code adapted from Riverscapes' brat_report.py
-    # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
-
-    data = []
-    with sqlite3.connect(db) as conn:
-        cur = conn.cursor()
-
-        for cat in cat_cutoffs:
-            lower = cat['lower'] if 'lower' in cat else None
-            upper = cat['upper'] if 'upper' in cat else None
-            extra_clauses = []
-            extra_args = []
-            if lower is not None:
-                extra_clauses.append(f'r.{var} > ?')
-                extra_args.append(lower)
-            if upper is not None:
-                extra_clauses.append(f'r.{var} <= ?')
-                extra_args.append(upper)
-
-            # Build the WHERE clause
-            where_sql = 'r.WatershedID = ?'
-            if extra_clauses:
-                where_sql += ' AND ' + ' AND '.join(extra_clauses)
-
-            # Select the data
-            cur.execute(f"""
-                SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
-                FROM {table} r
-                JOIN (
-                    SELECT SUM(iGeo_Len) / 1000 AS total_length
-                    FROM {table}
-                    WHERE WatershedID = ?
-                ) t ON 1=1
-                WHERE {where_sql}
-            """, [huc, huc] + extra_args)
-
-            row = cur.fetchone()
-            percent = round(row[0], 2) if row and row[0] is not None else None
-            data.append(percent)
-
-    print(f"Calculated %s for HUC {huc}: {data} for categories")
-    return data       # [%cat1, %cat2, ...]
-
-
-
 # --- SCRIPT STARTS HERE ---
 
 new_db_path = os.path.join(new_db_dir, new_db_name)
@@ -197,7 +145,7 @@ with sqlite3.connect(new_db_path) as conn:
         ]
         
         stat_cols = ["Mean", "St_Dev", "Min", "Max"]
-        stat_cols += [f'{cat}_Percent' for cat in categories]
+        stat_cols += [f'oCC_{cat}_Percent' for cat in categories]       # currently: only oCC % data
         cur.execute("DROP TABLE IF EXISTS Stats")
         cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")
         
@@ -225,9 +173,56 @@ with sqlite3.connect(new_db_path) as conn:
                 if src_var in col:
                     col_var = src_var
                     break
-            percents = calculate_capacity_percents(new_db_path, new_table_name, cap_cutoffs, col_var, huc)
-            for i in range(len(categories)):
-                results[f"{categories[i]}_Percent"] = percents[i]
+
+            # Now calculate % of each capacity categories — currently only if oCC column
+            # Code adapted from Riverscapes' brat_report.py
+            # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
+            if 'oCC_EX' in col:
+                # Find corresponding source db so we can pull data from there
+                col_label = col.split("_")[-1]
+                for path, label in source_dbs.items():
+                    if label == col_label:
+                        db_path = path
+                        break
+                src_conn = sqlite3.connect(db_path)
+                src_cur = src_conn.cursor()
+                
+                for cat_dict in cap_cutoffs:
+                    label = cat_dict['label']
+                    lower = cat_dict['lower'] if 'lower' in cat_dict else None
+                    upper = cat_dict['upper'] if 'upper' in cat_dict else None
+                    extra_clauses = []
+                    extra_args = []
+                    if lower is not None:
+                        extra_clauses.append('r.oCC_EX > ?')
+                        extra_args.append(lower)
+                    if upper is not None:
+                        extra_clauses.append('r.oCC_EX <= ?')
+                        extra_args.append(upper)
+
+                    # Build the WHERE clause
+                    where_sql = 'r.WatershedID = ?'
+                    if extra_clauses:
+                        where_sql += ' AND ' + ' AND '.join(extra_clauses)
+
+                    # Use JOIN for denominator clarity
+                    src_cur.execute(f"""
+                        SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
+                        FROM {source_table} r
+                        JOIN (
+                            SELECT SUM(iGeo_Len) / 1000 AS total_length
+                            FROM {source_table}
+                            WHERE WatershedID = ?
+                        ) t ON 1=1
+                        WHERE {where_sql}
+                    """, [huc, huc] + extra_args)
+                    row = src_cur.fetchone()
+                    percent = round(row[0], 2) if row and row[0] is not None else None
+                    results[f'oCC_{cat_dict["label"]}_Percent'].append(percent)
+                print(f"Calculated oCC_EX percents for {col}")
+            else:
+                for cat_dict in cap_cutoffs:
+                    results[f'oCC_{cat_dict["label"]}_Percent'].append(None)
 
         # insert a row for each dependent column (source data)
         # stats are columns
@@ -243,7 +238,7 @@ with sqlite3.connect(new_db_path) as conn:
         print(f"Stats table populated successfully.")
         
         
-    # ——— Populate adj table if requested
+    # ——— Populate adj table if requested ———
     if adjustments_table:
         print(f"Summarizing source databases into Adjustments Table...")
         
