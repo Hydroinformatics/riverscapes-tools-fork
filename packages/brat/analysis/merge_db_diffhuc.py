@@ -171,7 +171,7 @@ with sqlite3.connect(new_db_path) as conn:
             "oCC_HPE": "AVG"
         }
 
-        stat_cols = ["HUC", "Name"]
+        stat_cols = ["WatershedID", "HUC_Name"]
         stat_cols += [f"{op}_{col}" for col, op in cols_to_summarize.items()]
         stat_cols += ["None_Percent", "Rare_Percent", "Occasional_Percent", "Frequent_Percent", "Pervasive_Percent"]
 
