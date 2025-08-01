@@ -8,13 +8,6 @@ July 2025
 """
 
 
-
-# TODO:
-#   improper way to display % - just using counts of reaches, but they are different lengths
-#   use method in brat_report where we consider the iGeo_Length
-
-
-
 #imports
 import os
 import sys
@@ -84,7 +77,7 @@ def capacity_comparison_bars(database, out_dir):
 
             # now select the % values for each category for this HUC
             cur.execute(f"SELECT WatershedID, {', '.join(stat_cols)} FROM Stats WHERE WatershedID = {huc}")
-            cap_data = [row[1:] for row in cur.fetchall()]   # store everything except WatershedID
+            cap_data = cur.fetchone()[1:]   # store everything except WatershedID
             print(f"For HUC {huc}, selected percents = {cap_data}")
             
             # store data
@@ -101,7 +94,8 @@ def capacity_comparison_bars(database, out_dir):
         ax.bar_label(p, label_type='center')
     
     ax.set_title("Percent breakdown of Existing Capacity across HUCs")
-    ax.legend()
+    ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+    plt.tight_layout()
     
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
