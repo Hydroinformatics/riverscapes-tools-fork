@@ -193,7 +193,7 @@ with sqlite3.connect(new_db_path) as conn:
             print(f"Custom HUC name: {huc_name}")
             row_data = [huc, huc_name]
 
-            # first process cols_to_summarize for this huc
+            # Process cols_to_summarize for this huc
             for col, operation in cols_to_summarize.items():
                 cur.execute(f"SELECT {operation}({col}), WatershedID FROM {new_table} WHERE WatershedID = {huc}")
                 result = [val[0] for val in cur.fetchall()]     # don't store WatershedID
@@ -201,30 +201,34 @@ with sqlite3.connect(new_db_path) as conn:
                 row_data.append(result)
                 print(f"Selected {operation}({col}) = {result} for HUC {huc} in {new_table}")
             
-            # now calculate % capacity categories and append
-            cur.execute(f"SELECT oCC_EX, WatershedID FROM {new_table} WHERE WatershedID = {huc}")
-            cap_data = [val[0] for val in cur.fetchall()]   # only store oCC_EX
-            huc_total = len(cap_data)
-            print(f"Selected {huc_total} reaches corresponding to HUC {huc}")
-
+            # Now calculate % of each capacity categories
+            # Code adapted from Riverscapes' brat_report.py
+            # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
             for cat in oCC_cutoffs:
                 label = cat['label']
-                lower = cat['lower'] if 'lower' in cat.keys() else None
-                upper = cat['upper'] if 'upper' in cat.keys() else None
-                
-                # Filter to values within this category
-                if lower is not None and upper is not None:
-                    filtered = [val for val in cap_data if lower < val <= upper]
-                elif lower is not None:
-                    filtered = [val for val in cap_data if val > lower]
-                elif upper is not None:
-                    filtered = [val for val in cap_data if val <= upper]
-                else:
-                    filtered = cap_data  # fallback, should not happen
+                lower = cat['lower'] if 'lower' in cat else None
+                upper = cat['upper'] if 'upper' in cat else None
+                where_clause = ''
+                sql_args = []
 
-                percent = round((100 * len(filtered) / huc_total), 1)
-                row_data.append(percent)
-                print(f"Caulcated {percent}% of reaches in {cat} category")
+                if lower is not None:
+                    where_clause = ' (oCC_EX > ?)'
+                    sql_args.append(lower)
+
+                if upper is not None:
+                    if len(where_clause) > 0:
+                        where_clause += ' AND '
+                    sql_args.append(upper)
+
+                    where_clause += ' (oCC_EX <= ?) '
+
+                cur.execute(f"""SELECT (0.1 * sum(iGeo_Len) / t.total_length) Percent
+                            FROM {new_table} r,
+                            (select sum(igeo_len) / 1000 total_length from {new_table}) t
+                            WHERE {where_clause}""", sql_args)
+                row = cur.fetchone()
+                row_data.append(row['Percent'] or None)
+                print(f"Caulcated {row['Percent']}% of reaches in {cat} category")
             
             # insert data
             placeholders = ', '.join(['?'] * len(row_data))
