@@ -65,76 +65,104 @@ lookup_tables_to_copy = [
 new_db = 'brat-all-siletz-custom.db'
 new_table = 'CombinedOutputs'
 
-# Add a column to track the source database?
+# Options - column to track the source database? summary table?
 track_source = True
+stats_table = True
 
 
 # --- SCRIPT STARTS HERE ---
 
 # Create the new database and table
-conn = sqlite3.connect(new_db)
-cur = conn.cursor()
+with sqlite3.connect(new_db) as conn:
+    cur = conn.cursor()
 
-# Drop tables if they exists (for repeatable runs)
-cur.execute(f"DROP TABLE IF EXISTS {new_table}")
-for table in lookup_tables_to_copy:
-    cur.execute(f"DROP TABLE IF EXISTS {table}")
-
-# First copy lookup tables — only need to do this from one source database since identical
-if lookup_tables_to_copy:
-    print("Copying lookup tables...")
-    src_conn = sqlite3.connect(source_dbs[0])
-    src_cur = src_conn.cursor()
-    
+    # Drop tables if they exists (for repeatable runs)
+    cur.execute(f"DROP TABLE IF EXISTS {new_table}")
     for table in lookup_tables_to_copy:
-        print(f"Copying {table}...")
-        src_cur.execute(f"SELECT * FROM {table}")
-        rows = src_cur.fetchall()
-        col_names = [description[0] for description in src_cur.description]
+        cur.execute(f"DROP TABLE IF EXISTS {table}")
+
+    # First copy lookup tables — only need to do this from one source database since identical
+    if lookup_tables_to_copy:
+        print("Copying lookup tables...")
+        src_conn = sqlite3.connect(source_dbs[0])
+        src_cur = src_conn.cursor()
         
-        # Create the table in the new database
-        col_defs = ', '.join([f"{col} TEXT" for col in col_names])  # Assuming TEXT for simplicity
-        create_stmt = f"CREATE TABLE {table} ({col_defs})"
-        cur.execute(create_stmt)
+        for table in lookup_tables_to_copy:
+            print(f"Copying {table}...")
+            src_cur.execute(f"SELECT * FROM {table}")
+            rows = src_cur.fetchall()
+            col_names = [description[0] for description in src_cur.description]
+            
+            # Create the table in the new database
+            col_defs = ', '.join([f"{col} TEXT" for col in col_names])  # Assuming TEXT for simplicity
+            create_stmt = f"CREATE TABLE {table} ({col_defs})"
+            cur.execute(create_stmt)
+            
+            # Insert data into the new table
+            placeholders = ', '.join(['?'] * len(col_names))
+            insert_stmt = f"INSERT INTO {table} ({', '.join(col_names)}) VALUES ({placeholders})"
+            cur.executemany(insert_stmt, rows)
+            
+            print(f"Inserted {len(rows)} rows into {table}")
         
-        # Insert data into the new table
-        placeholders = ', '.join(['?'] * len(col_names))
-        insert_stmt = f"INSERT INTO {table} ({', '.join(col_names)}) VALUES ({placeholders})"
-        cur.executemany(insert_stmt, rows)
-        
-        print(f"Inserted {len(rows)} rows into {table}")
-    
-    src_conn.close()
+        src_conn.close()
 
 
-# Build CREATE TABLE statement
-col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Use REAL for numeric, change as needed
-if track_source:
-    col_defs += ', SourceDB TEXT'
-create_stmt = f"CREATE TABLE {new_table} ({col_defs})"
-cur.execute(create_stmt)
-conn.commit()
-
-# For each source database, copy the data
-for db in source_dbs:
-    print(f"Processing {db}...")
-    src_conn = sqlite3.connect(db)
-    src_cur = src_conn.cursor()
-    col_list = ', '.join(columns_to_copy)
-    src_cur.execute(f"SELECT {col_list} FROM {source_table}")
-    rows = src_cur.fetchall()
-    # Prepare insert statement
-    placeholders = ', '.join(['?'] * len(columns_to_copy))
+    # Build CREATE TABLE statement
+    col_defs = ', '.join([f"{col} REAL" for col in columns_to_copy])  # Use REAL for numeric, change as needed
     if track_source:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
-        data = [row + (db,) for row in rows]
-    else:
-        insert_stmt = f"INSERT INTO {new_table} ({col_list}) VALUES ({placeholders})"
-        data = rows
-    cur.executemany(insert_stmt, data)
-    src_conn.close()
-    print(f"Inserted {len(rows)} rows from {db}")
+        col_defs += ', SourceDB TEXT'
+    create_stmt = f"CREATE TABLE {new_table} ({col_defs})"
+    cur.execute(create_stmt)
+    conn.commit()
 
-conn.commit()
-conn.close()
+    # For each source database, copy the data
+    for db in source_dbs:
+        print(f"Processing {db}...")
+        src_conn = sqlite3.connect(db)
+        src_cur = src_conn.cursor()
+        col_list = ', '.join(columns_to_copy)
+        src_cur.execute(f"SELECT {col_list} FROM {source_table}")
+        rows = src_cur.fetchall()
+        # Prepare insert statement
+        placeholders = ', '.join(['?'] * len(columns_to_copy))
+        if track_source:
+            insert_stmt = f"INSERT INTO {new_table} ({col_list}, SourceDB) VALUES ({placeholders}, ?)"
+            data = [row + (db,) for row in rows]
+        else:
+            insert_stmt = f"INSERT INTO {new_table} ({col_list}) VALUES ({placeholders})"
+            data = rows
+        cur.executemany(insert_stmt, data)
+        src_conn.close()
+        print(f"Inserted {len(rows)} rows from {db}")
+
+    conn.commit()
+
+
+    # Optional Stats table to summarize results by HUC
+
+    if stats_table:
+
+        custom_huc_names = {        # customize this to your WatershedIDs
+            '1710020407': 'Lower Siletz',
+            '1710020405': 'Middle Siletz',
+            '1710020404': 'Upper Siletz',
+            '1710020406': 'Rock Creek',
+        }
+
+        categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
+
+        oCC_cutoffs = [
+            {'label': categories[0], 'upper': 0},
+            {'label': categories[1], 'lower': 0, 'upper': 1},
+            {'label': categories[2], 'lower': 1, 'upper': 5},
+            {'label': categories[3], 'lower': 5, 'upper': 15},
+            {'label': categories[4], 'lower': 15}
+        ]
+
+        
+
+
+
+
 print("Merging complete! Data is in", new_db)
