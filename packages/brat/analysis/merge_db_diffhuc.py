@@ -143,6 +143,7 @@ with sqlite3.connect(new_db) as conn:
     # Optional Stats table to summarize results by HUC
 
     if stats_table:
+        print("Creating Stats table to summarize results by HUC...")
 
         custom_huc_names = {        # customize this to your WatershedIDs
             '1710020407': 'Lower Siletz',
@@ -161,9 +162,71 @@ with sqlite3.connect(new_db) as conn:
             {'label': categories[4], 'lower': 15}
         ]
 
-        
+        cols_to_summarize = {   # col_name: operation
+            "mCC_EX_CT": "SUM",
+            "oVC_EX": "AVG",
+            "oCC_EX": "AVG",
+            "oCC_HPE": "AVG"
+        }
 
+        stat_cols = ["HUC", "Name"]
+        stat_cols += [f"{op}_{col}" for col, op in cols_to_summarize.items()]
+        stat_cols += ["%_None", "%_Rare", "%_Occasional", f"%_Frequent", "%_Pervasive"]
 
+        # create table
+        cur.execute(f"DROP TABLE IF EXISTS Stats")
+        cur.execute(f"CREATE TABLE Stats ({', '.join(stat_cols)})")
+
+        # figure out what hucs we are working with
+        cur.execute(f"SELECT DISTINCT WatershedID FROM {new_table}")
+        hucs = [row[0] for row in cur.fetchall()]   # convert to list of ints
+        print(f"Found {len(hucs)} distinct HUCs in db.")
+
+        # each huc will be a row
+        for huc in hucs:
+            print(f"Processing HUC {huc}...")
+
+            huc_name = custom_huc_names[huc] if huc in custom_huc_names.keys() else None
+            row_data = [huc, huc_name]
+
+            # first process cols_to_summarize for this huc
+            for col, operation in cols_to_summarize.items():
+                cur.execute(f"SELECT {operation}({col}), WatershedID FROM {new_table} WHERE WatershedID = {huc}")
+                result = [val[0] for val in cur.fetchall()]     # don't store WatershedID
+                row_data.append(result)
+                print(f"Selected {operation}({col}) = {result} for HUC {huc} in {new_table}")
+            
+            # now calculate % capacity categories and append
+            cur.execute(f"SELECT oCC_EX, WatershedID FROM {new_table} WHERE WatershedID = {huc}")
+            cap_data = [val[0] for val in cur.fetchall()]   # only store oCC_EX
+            huc_total = len(cap_data)
+            print(f"Selected {huc_total} reaches corresponding to HUC {huc}")
+
+            for cat in oCC_cutoffs:
+                label = cat['label']
+                lower = cat['lower'] if 'lower' in cat.keys() else None
+                upper = cat['upper'] if 'upper' in cat.keys() else None
+                
+                # Filter to values within this category
+                if lower is not None and upper is not None:
+                    filtered = [val for val in cap_data if lower < val <= upper]
+                elif lower is not None:
+                    filtered = [val for val in cap_data if val > lower]
+                elif upper is not None:
+                    filtered = [val for val in cap_data if val <= upper]
+                else:
+                    filtered = cap_data  # fallback, should not happen
+
+                percent = round((100 * len(filtered) / huc_total), 1)
+                row_data.append(percent)
+            
+            # insert data
+            placeholders = ', '.join(['?'] * len(row_data))
+            insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
+            cur.execute(insert_stmt, row_data)
+
+        conn.commit()   
+        print("Stats table complete.")
 
 
 print("Merging complete! Data is in", new_db)
