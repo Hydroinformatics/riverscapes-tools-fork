@@ -49,6 +49,9 @@ source_dbs = {
 # Name of the table to extract from in each source database
 source_table = 'ReachAttributes'
 
+# HUC that all source_dbs share
+huc = 1710020407
+
 # Columns to copy (must exist in all source tables)
 columns_to_copy_once = [    # independent columns
     'ReachID',  # do not change
@@ -67,6 +70,58 @@ new_table_name = 'CombinedOutputs'
 # Useful supplemental tables.
 stats_table = True      # summarizes mean, st.dev, etc. of each column for all reaches
 adjustments_table = True    # summarizes the FIS adjustments made in each source db
+
+
+
+# --- HELPER FUNCTION ---
+def calculate_capacity_percents(db, table, cat_cutoffs, var: str, huc: float) -> list:
+    """ Returns list of the percent of watershed in each category (e.g. % None, % Rare, ...)
+    :param cat_cutoffs: a list of dictionaries (containing label, and lower or/and upper) for each category
+    :param var: the name of the variable to select
+    :param huc: the huc (WatershedID) to process
+    """
+    # Code adapted from Riverscapes' brat_report.py
+    # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
+
+    data = []
+    with sqlite3.connect(db) as conn:
+        cur = conn.cursor()
+
+        for cat in cat_cutoffs:
+            lower = cat['lower'] if 'lower' in cat else None
+            upper = cat['upper'] if 'upper' in cat else None
+            extra_clauses = []
+            extra_args = []
+            if lower is not None:
+                extra_clauses.append(f'r.{var} > ?')
+                extra_args.append(lower)
+            if upper is not None:
+                extra_clauses.append(f'r.{var} <= ?')
+                extra_args.append(upper)
+
+            # Build the WHERE clause
+            where_sql = 'r.WatershedID = ?'
+            if extra_clauses:
+                where_sql += ' AND ' + ' AND '.join(extra_clauses)
+
+            # Select the data
+            cur.execute(f"""
+                SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
+                FROM {table} r
+                JOIN (
+                    SELECT SUM(iGeo_Len) / 1000 AS total_length
+                    FROM {table}
+                    WHERE WatershedID = ?
+                ) t ON 1=1
+                WHERE {where_sql}
+            """, [huc, huc] + extra_args)
+
+            row = cur.fetchone()
+            percent = round(row[0], 2) if row and row[0] is not None else None
+            data.append(percent)
+
+    print(f"Calculated %s for HUC {huc}: {data} for categories")
+    return data       # [%cat1, %cat2, ...]
 
 
 
@@ -130,13 +185,24 @@ with sqlite3.connect(new_db_path) as conn:
     # —— Populate stats table if requested ——
     if stats_table:
         print(f"Processing all reaches into Stats table...")
+
+        categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
+
+        cap_cutoffs = [
+            {'label': categories[0], 'upper': 0},
+            {'label': categories[1], 'lower': 0, 'upper': 1},
+            {'label': categories[2], 'lower': 1, 'upper': 5},
+            {'label': categories[3], 'lower': 5, 'upper': 15},
+            {'label': categories[4], 'lower': 15}
+        ]
         
         stat_cols = ["Mean", "St_Dev", "Min", "Max"]
+        stat_cols += [f'{cat}_Percent' for cat in categories]
         cur.execute("DROP TABLE IF EXISTS Stats")
         cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")
         
-        results = {stat: [] for stat in stat_cols}    # Mean: [means for each col], ...
-        # compute stats
+        results = {stat: [] for stat in stat_cols}    # Mean: [means for each data source], ...
+        # compute stats for each data source
         for col in new_dep_cols:
             cur.execute(f"SELECT AVG({col}), MIN({col}), MAX({col}) FROM {new_table_name}")
             mean_, min_, max_ = cur.fetchone()
@@ -153,6 +219,15 @@ with sqlite3.connect(new_db_path) as conn:
             else:
                 stdev = None
             results["St_Dev"].append(stdev)
+
+            # compute category % stats for this col
+            for src_var in columns_to_copy_each:
+                if src_var in col:
+                    col_var = src_var
+                    break
+            percents = calculate_capacity_percents(new_db_path, new_table_name, cap_cutoffs, col_var, huc)
+            for i in range(len(categories)):
+                results[f"{categories[i]}_Percent"] = percents[i]
 
         # insert a row for each dependent column (source data)
         # stats are columns
