@@ -7,7 +7,8 @@ Merges standard BRAT databases (.gpkg) of the SAME MODEL, on DIFFERENT REGIONS.
     Result:
         # of items in the new db = sum of items in all source dbs
 
-You can edit the config with your database paths and desired columns and run this script.
+INSTRUCTIONS:
+    Edit the config with your database paths and desired columns and just run the script.
 
 Disclaimers:
     Script can only copy integer outputs; geometry columns will not be copied correctly.
@@ -69,6 +70,7 @@ new_table = 'CombinedOutputs'
 # Options - column to track the source database? summary table?
 track_source = True
 stats_table = True
+stats_units = 'KM'      # choose either 'KM' or 'Miles'
 
 
 
@@ -164,15 +166,16 @@ with sqlite3.connect(new_db_path) as conn:
         ]
 
         cols_to_summarize = {   # col_name: operation
-            "mCC_EX_CT": "SUM",
             "oVC_EX": "AVG",
             "oCC_EX": "AVG",
+            "mCC_EX_CT": "SUM",
             "oCC_HPE": "AVG"
         }
 
         stat_cols = ["WatershedID", "HUC_Name"]
         stat_cols += [f"{op}_{col}" for col, op in cols_to_summarize.items()]
         stat_cols += ["None_Percent", "Rare_Percent", "Occasional_Percent", "Frequent_Percent", "Pervasive_Percent"]
+        stat_cols += [f"None_Length{stats_units}", f"Rare_Length{stats_units}", f"Occasional_Length{stats_units}", f"Frequent_Length{stats_units}", f"Pervasive_Length{stats_units}"]
 
         # create table
         cur.execute(f"DROP TABLE IF EXISTS Stats")
@@ -190,19 +193,21 @@ with sqlite3.connect(new_db_path) as conn:
 
             huc_name = custom_huc_names[int(huc)] if int(huc) in custom_huc_names.keys() else None
             print(f"Custom HUC name: {huc_name}")
-            row_data = [huc, huc_name]
+
+            row_data = {col: None for col in stat_cols}
+            row_data["WatershedID"] = huc
+            row_data["HUC_Name"] = huc_name
 
             # Process cols_to_summarize for this huc
             for col, operation in cols_to_summarize.items():
                 cur.execute(f"SELECT {operation}({col}), WatershedID FROM {new_table} WHERE WatershedID = {huc}")
                 result = [val[0] for val in cur.fetchall()]     # don't store WatershedID
                 result = round(result[0], 2)    # convert from list [float] to rounded float
-                row_data.append(result)
+                row_data[f"{operation}_{col}"] = result
                 print(f"Selected {operation}({col}) = {result} for HUC {huc} in {new_table}")
             
-            # Now calculate % of each capacity categories
+            # Now calculate % AND length of each capacity categories (% = length in cat / total length)
             # Code adapted from Riverscapes' brat_report.py
-            # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
             for cat in oCC_cutoffs:
                 label = cat['label']
                 lower = cat['lower'] if 'lower' in cat else None
@@ -223,7 +228,9 @@ with sqlite3.connect(new_db_path) as conn:
 
                 # Use JOIN for denominator clarity
                 cur.execute(f"""
-                    SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
+                    SELECT (sum(iGeo_Len) / 1000) AS LengthKM, 
+                            (sum(igeo_len) * 0.000621371) AS LengthMiles, 
+                            (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
                     FROM {new_table} r
                     JOIN (
                         SELECT SUM(iGeo_Len) / 1000 AS total_length
@@ -233,14 +240,19 @@ with sqlite3.connect(new_db_path) as conn:
                     WHERE {where_sql}
                 """, [huc, huc] + extra_args)
                 row = cur.fetchone()
-                percent = round(row[0], 2) if row and row[0] is not None else None
-                row_data.append(percent)
-                print(f"Calculated {percent}% of reaches in {cat['label']} category")
+
+                percent = round(row['Percent'], 2) if row and row['Percent'] is not None else None
+                length = round(row[f'Length{stats_units}'], 2) if row[f'Length{stats_units}'] is not None else None
+                row_data[f"{cat}_Percent"] = percent
+                row_data[f"{cat}_Length{stats_units}"] = length
+
+                print(f"Calculated {percent}% and {length} {stats_units} of reaches in {cat['label']} category")
+
             
             # insert data
             placeholders = ', '.join(['?'] * len(row_data))
             insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
-            cur.execute(insert_stmt, row_data)
+            cur.execute(insert_stmt, row_data.values())
             conn.commit()   
         
         print("Stats table complete.")
