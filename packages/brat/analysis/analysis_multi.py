@@ -18,7 +18,9 @@ import argparse
 import traceback
 import sqlite3
 import matplotlib.pyplot as plt
+import seaborn as sns       # you may have to run $ conda install seaborn
 import numpy as np
+import pandas as pd
 
 
 def analyze(database, out_dir):
@@ -45,7 +47,7 @@ def capacity_percent_comparison_bars(database, out_dir):
     :param out_dir: optional path to a folder to save plots to
     """
 
-    # we already have % category values assuming the "Stats" table was made in combined db
+    # we already have % category values assuming the "Stats" table was created
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
     
@@ -54,7 +56,7 @@ def capacity_percent_comparison_bars(database, out_dir):
         categories[1]: '#ffaa00',
         categories[2]: '#f5f500',
         categories[3]: '#4ce601',
-        categories[4]: '#005ce6',
+        categories[4]: '#005ce6'
     }
 
     stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
@@ -97,7 +99,7 @@ def capacity_percent_comparison_bars(database, out_dir):
         bottom += y_data[cat]
         ax.bar_label(p, label_type='center')
     
-    ax.set_title("Percent breakdown of Existing Capacity across HUCs")
+    ax.set_title("Categorical Percent Breakdown of Existing Capacity across HUCs")
     ax.legend(loc='upper left', bbox_to_anchor=(1,1))
     plt.tight_layout()
     
@@ -110,32 +112,31 @@ def capacity_percent_comparison_bars(database, out_dir):
         plt.show()
 
 
-def capacity_percent_comparison_bars(database, out_dir):
+def capacity_distance_comparison_bars(database, out_dir):
     """
-    Generate stacked bar charts of oCC_EX categorical distances (mi) for each HUC
+    Generate stacked bar charts of oCC_EX categorical distances for each HUC
     :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
     :param out_dir: optional path to a folder to save plots to
     """
 
-    # we already have % category values assuming the "Stats" table was made in combined db
+    # we already have length category values assuming the "Stats" table was created
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
     
-    cat_colors = {      # from brat_report.py
-        categories[0]: '#f50000',
-        categories[1]: '#ffaa00',
-        categories[2]: '#f5f500',
-        categories[3]: '#4ce601',
-        categories[4]: '#005ce6',
-    }
+    cat_colors = [      # from brat_report.py
+        '#f50000',
+        '#ffaa00',
+        '#f5f500',
+        '#4ce601',
+        '#005ce6'
+    ]
 
-    units = 
+    units = 'KM'     # choose either 'KM' or 'Miles'
 
-    stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
+    stat_cols = [f"{cat}_{units}" for cat in categories]    # ensure this corresponds to Stats table
 
     # to store data for stacked bar chart
-    x_data = []
-    y_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
+    data = pd.DataFrame(columns=[cat for cat in categories])    # cols=categories; rows=hucs; data=lengths
 
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
@@ -147,33 +148,23 @@ def capacity_percent_comparison_bars(database, out_dir):
 
         for huc, name in hucs:
             print(f"Processing HUC {huc}...")
-            # append huc or custom name to x array for bar chart
-            if name is not None:
-                x_data.append(f"{name}")
-            else:
-                x_data.append(f"{huc}")
 
-            # now select the % values for each category for this HUC
+            # select the length values for each category for this HUC
             cur.execute(f"SELECT WatershedID, {', '.join(stat_cols)} FROM Stats WHERE WatershedID = {huc}")
             cap_data = cur.fetchone()[1:]   # store everything except WatershedID
             print(f"For HUC {huc}, selected percents = {cap_data}")
             
-            # store data
-            for i in range(len(categories)):
-                y_data[categories[i]].append(cap_data[i])
+            # populate dataframe
+            if name is not None:
+                data[name] = cap_data   # cols should be parallel
+            else:
+                data[huc] = cap_data
     
     # now construct bar chart
-    fig, ax = plt.subplots()
-    bottom = np.zeros(len(x_data))
-
-    for cat in categories:      # build one layer at a time
-        p = ax.bar(x_data, y_data[cat], 0.7, label=cat, color=cat_colors[cat], bottom=bottom)
-        bottom += y_data[cat]
-        ax.bar_label(p, label_type='center')
+    data.plot.bar(stacked=True, color=cat_colors)
     
-    ax.set_title("Percent breakdown of Existing Capacity across HUCs")
-    ax.legend(loc='upper left', bbox_to_anchor=(1,1))
-    plt.tight_layout()
+    plt.title("Categorical Length Breakdown of Existing Capacity across HUCs")
+    plt.ylabel(f"Reach Length ({units})")
     
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
