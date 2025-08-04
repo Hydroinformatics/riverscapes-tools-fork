@@ -152,16 +152,17 @@ def capacity_distance_comparison_bars(database, out_dir):
             # select the length values for each category for this HUC
             cur.execute(f"SELECT WatershedID, {', '.join(stat_cols)} FROM Stats WHERE WatershedID = {huc}")
             cap_data = cur.fetchone()[1:]   # store everything except WatershedID
-            print(f"For HUC {huc}, selected percents = {cap_data}")
+            print(f"For HUC {huc}, selected lengths = {cap_data}{units}")
             
             # populate dataframe
             if name is not None:
-                data[name] = cap_data   # cols should be parallel
+                data.loc[name] = cap_data   # cols should be parallel
             else:
-                data[huc] = cap_data
+                data.loc[huc] = cap_data
     
+    print(data)
     # now construct bar chart
-    data.plot.bar(stacked=True, color=cat_colors)
+    data.plot.bar(stacked=True, color=cat_colors, rot=0)
     
     plt.title("Categorical Length Breakdown of Existing Capacity across HUCs")
     plt.ylabel(f"Reach Length ({units})")
