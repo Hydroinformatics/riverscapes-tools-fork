@@ -3,6 +3,9 @@ Performs additional analysis on BRAT output data (a single BRAT database).
 Checks for correlation between dam capacity and various other variables.
 Can print or save matplotlib plots.
 
+INSTRUCTIONS:
+    Run the script from the terminal, passing args (e.g. path to database) as defined
+
 Evan Hackstadt
 July 2025
 """

@@ -7,7 +7,8 @@ Merges standard BRAT databases (.gpkg) of the SAME REGION/HUC (e.g. with differe
     Result:
         # of items in the new db = # of items in any one source db (should be the same)
 
-You can edit the config with your database paths and desired columns and run this script.
+INSTRUCTIONS:
+    Edit the config with your database paths and desired columns and just run the script.
 
 Disclaimers:
     Script can only copy integer outputs; geometry columns will not be copied correctly.
