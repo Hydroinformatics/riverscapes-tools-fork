@@ -27,7 +27,7 @@ import sqlite3
 # Paths to your source databases                               # SET THESE
 source_dbs = {
     # 'path to db': 'shorthand label'
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/0-Standard-FIS/outputs/brat.gpkg': 'ST',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Standard-FIS/outputs/brat.gpkg': 'ST',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'LEspl',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'RTspl',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'LEsp2',
@@ -65,7 +65,7 @@ columns_to_copy_each = [    # from each source db
 
 # Name of the new database and table
 new_db_name = 'brat-all-fis.db'
-new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/fis-runs-processed/'                        # SET THIS
+new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/ALL'  # SET THIS
 new_table_name = 'CombinedOutputs'
 
 # Useful supplemental tables.
@@ -146,9 +146,9 @@ with sqlite3.connect(new_db_path) as conn:
         ]
         
         stat_cols = ["Mean", "St_Dev", "Min", "Max"]
-        stat_cols += [f'oCC_{cat}_Percent' for cat in categories]       # currently: only oCC % data
+        stat_cols += [f'{cat}_Percent' for cat in categories]       # currently: only oCC % data
         cur.execute("DROP TABLE IF EXISTS Stats")
-        cur.execute(f"CREATE TABLE Stats (Label, {', '.join(stat_cols)})")
+        cur.execute(f"CREATE TABLE Stats (Label TEXT, {', '.join(stat_cols)})")
         
         results = {stat: [] for stat in stat_cols}    # Mean: [means for each data source], ...
         # compute stats for each data source
@@ -219,11 +219,11 @@ with sqlite3.connect(new_db_path) as conn:
                     """, [huc, huc] + extra_args)
                     row = src_cur.fetchone()
                     percent = round(row[0], 2) if row and row[0] is not None else None
-                    results[f'oCC_{cat_dict["label"]}_Percent'].append(percent)
+                    results[f'{cat_dict["label"]}_Percent'].append(percent)
                 print(f"Calculated oCC_EX percents for {col}")
             else:
                 for cat_dict in cap_cutoffs:
-                    results[f'oCC_{cat_dict["label"]}_Percent'].append(None)
+                    results[f'{cat_dict["label"]}_Percent'].append(None)
 
         # insert a row for each dependent column (source data)
         # stats are columns

@@ -22,6 +22,128 @@ July 2025
 
 
 
+#imports
+import os
+import sys
+import argparse
+import traceback
+import sqlite3
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def analyze(database, out_dir):
+    """
+    Master function called by main. Calls sub-functions for different analyses.
+    :param database: path to multi-FIS, same-HUC combined BRAT database
+    :param out_dir: optional path to a folder to save plots to
+    """
+    print("Analyzing database {}".format(os.path.basename(database)))
+    if out_dir is not None:
+        print("Output dir provided; saving plots to {}".format(out_dir))
+
+    # > Call analysis functions. Can turn these on or off
+    capacity_comparison_bars(database, out_dir)
+
+    print("Analysis complete.")
+
+
+def capacity_comparison_bars(database, out_dir):        # currently only oCC_EX
+    """
+    Generate stacked bar charts of oCC_EX for each huc in the database
+    :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
+    :param out_dir: optional path to a folder to save plots to
+    """
+
+    # we already have % category values assuming the "Stats" table was made in combined db
+
+    categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
+    
+    cat_colors = {      # from brat_report.py
+        categories[0]: '#f50000',
+        categories[1]: '#ffaa00',
+        categories[2]: '#f5f500',
+        categories[3]: '#4ce601',
+        categories[4]: '#005ce6',
+    }
+
+    stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
+
+    # to store data for stacked bar chart
+    x_data = []
+    y_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
+
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+
+        # figure out what DBs we are working with
+        cur.execute(f"SELECT Label FROM Stats")         # assuming Stats table exists
+        all_labels = [row[0] for row in cur.fetchall()]       # convert to list
+        oCC_labels = [l for l in all_labels if 'oCC_EX' in l]
+        print(f"Found {len(oCC_labels)} sources of oCC_EX data.")
+
+        for label in oCC_labels:
+            print(f"Processing {label}...")
+            x_data.append(label.replace("oCC_EX_", ""))
+
+            # Select the % values for each category for this HUC
+            cur.execute(f"SELECT Label, {', '.join(stat_cols)} FROM Stats WHERE Label LIKE '%{label}%'")
+            cap_data = cur.fetchone()[1:]
+            print(f"For {label}, selected percents = {cap_data}")
+            
+            # store data
+            for i in range(len(categories)):
+                y_data[categories[i]].append(cap_data[i])
+    
+    # now construct bar chart
+    fig, ax = plt.subplots()
+    bottom = np.zeros(len(x_data))
+
+    for cat in categories:      # build one layer at a time
+        p = ax.bar(x_data, y_data[cat], 0.7, label=cat, color=cat_colors[cat], bottom=bottom)
+        bottom += y_data[cat]
+        ax.bar_label(p, label_type='center')
+    
+    ax.set_ylabel("Percent of Watershed in a Category")
+    ax.set_title("Existing Capacity Percentages for Different FIS Adjustments")
+    ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+    plt.tight_layout()
+    
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "oCC_EX-stacked-bar.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description='Takes a same-HUC, multi-FIS combined BRAT database and performs additional analysis on the output variables.'
+    )
+    parser.add_argument('database', help='Path to at least one BRAT SQLite database (.gpkg). Add additional paths separated by spaces.', type=str)
+    parser.add_argument('-o', '--output', help='(Optional) Path to an output directory where plots will be saved instead of displayed at runtime. If none provided, plots will not be saved.', type=str)
+    args = parser.parse_args()
+    print(args.database)
+
+    try:
+        analyze(args.database, args.output)
+
+    except Exception as ex:
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
 
 ''' from scikit-fuzzy docs
 

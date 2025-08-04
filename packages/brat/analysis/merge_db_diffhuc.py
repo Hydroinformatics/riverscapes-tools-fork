@@ -29,10 +29,10 @@ import sqlite3
 
 # List your source databases
 source_dbs = [
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Lower-Siletz-River-1710020407/BRAT-LSR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Middle-Siletz-River-1710020405/BRAT-MSR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Upper-Siletz-River-1710020404/BRAT-USR-2025/outputs/brat.gpkg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/Rock-Creek-1710020406/BRAT-RC-2025/outputs/brat.gpkg'
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/LATEST-07-2025/Lower-Siletz-River-1710020407/BRAT-LSR-2025/outputs/brat.gpkg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/LATEST-07-2025/Middle-Siletz-River-1710020405/BRAT-MSR-2025/outputs/brat.gpkg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/LATEST-07-2025/Upper-Siletz-River-1710020404/BRAT-USR-2025/outputs/brat.gpkg',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/LATEST-07-2025/Rock-Creek-1710020406/BRAT-RC-2025/outputs/brat.gpkg'
 ]
 
 # Name of the table to extract from in each source database
@@ -63,14 +63,13 @@ lookup_tables_to_copy = [
 ]
 
 # New database output directory, name, and main table name
-new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/public-runs-processed'
+new_db_dir = '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/public-runs/LATEST-07-2025/ALL'
 new_db_name = 'brat-all-siletz-custom.db'
 new_table = 'CombinedOutputs'
 
 # Options - column to track the source database? summary table?
 track_source = True
 stats_table = True
-stats_units = 'KM'      # choose either 'KM' or 'Miles'
 
 
 
@@ -175,7 +174,8 @@ with sqlite3.connect(new_db_path) as conn:
         stat_cols = ["WatershedID", "HUC_Name"]
         stat_cols += [f"{op}_{col}" for col, op in cols_to_summarize.items()]
         stat_cols += ["None_Percent", "Rare_Percent", "Occasional_Percent", "Frequent_Percent", "Pervasive_Percent"]
-        stat_cols += [f"None_Length{stats_units}", f"Rare_Length{stats_units}", f"Occasional_Length{stats_units}", f"Frequent_Length{stats_units}", f"Pervasive_Length{stats_units}"]
+        stat_cols += [f"None_KM", f"Rare_KM", f"Occasional_KM", f"Frequent_KM", f"Pervasive_KM"]
+        stat_cols += [f"None_Miles", f"Rare_Miles", f"Occasional_Miles", f"Frequent_Miles", f"Pervasive_Miles"]
 
         # create table
         cur.execute(f"DROP TABLE IF EXISTS Stats")
@@ -228,9 +228,9 @@ with sqlite3.connect(new_db_path) as conn:
 
                 # Use JOIN for denominator clarity
                 cur.execute(f"""
-                    SELECT (sum(iGeo_Len) / 1000) AS LengthKM, 
-                            (sum(igeo_len) * 0.000621371) AS LengthMiles, 
-                            (0.1 * SUM(r.iGeo_Len) / t.total_length) AS Percent
+                    SELECT (0.1 * SUM(r.iGeo_Len) / t.total_length) Percent,
+                            (sum(iGeo_Len) / 1000) LengthKM, 
+                            (sum(igeo_len) * 0.000621371) LengthMiles 
                     FROM {new_table} r
                     JOIN (
                         SELECT SUM(iGeo_Len) / 1000 AS total_length
@@ -241,18 +241,20 @@ with sqlite3.connect(new_db_path) as conn:
                 """, [huc, huc] + extra_args)
                 row = cur.fetchone()
 
-                percent = round(row['Percent'], 2) if row and row['Percent'] is not None else None
-                length = round(row[f'Length{stats_units}'], 2) if row[f'Length{stats_units}'] is not None else None
-                row_data[f"{cat}_Percent"] = percent
-                row_data[f"{cat}_Length{stats_units}"] = length
+                percent = round(row[0], 2) if row and row[0] is not None else None
+                length_km = round(row[1], 2) if row[1] is not None else None
+                length_miles = round(row[2], 2) if row[2] is not None else None
+                row_data[f"{label}_Percent"] = percent
+                row_data[f"{label}_KM"] = length_km
+                row_data[f"{label}_Miles"] = length_miles
 
-                print(f"Calculated {percent}% and {length} {stats_units} of reaches in {cat['label']} category")
+                print(f"Calculated {percent}%, {length_km}km, {length_miles}mi of reaches in {cat['label']} category")
 
             
             # insert data
             placeholders = ', '.join(['?'] * len(row_data))
             insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
-            cur.execute(insert_stmt, row_data.values())
+            cur.execute(insert_stmt, list(row_data.values()))
             conn.commit()   
         
         print("Stats table complete.")
