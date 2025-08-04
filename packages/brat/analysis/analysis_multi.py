@@ -21,7 +21,7 @@ import numpy as np
 def analyze(database, out_dir):
     """
     Master function called by main. Calls sub-functions for different analyses.
-    :param database: path to different-huc combined BRAT database
+    :param database: path to multi-huc combined BRAT database
     :param out_dir: optional path to a folder to save plots to
     """
     print("Analyzing database {}".format(os.path.basename(database)))
@@ -110,7 +110,7 @@ def capacity_comparison_bars(database, out_dir):
 def main():
 
     parser = argparse.ArgumentParser(
-        description='Takes a BRAT databases and performs additional analysis on the output variables in an attempt to identify any patterns.'
+        description='Takes a multi-HUC combined BRAT database and performs additional analysis on the output variables.'
     )
     parser.add_argument('database', help='Path to at least one BRAT SQLite database (.gpkg). Add additional paths separated by spaces.', type=str)
     parser.add_argument('-o', '--output', help='(Optional) Path to an output directory where plots will be saved instead of displayed at runtime. If none provided, plots will not be saved.', type=str)

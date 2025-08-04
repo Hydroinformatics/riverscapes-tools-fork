@@ -421,7 +421,7 @@ def select_var(database, var: str):
 def main():
 
     parser = argparse.ArgumentParser(
-        description='Takes a BRAT databases and performs additional analysis on the output variables in an attempt to identify any patterns.'
+        description='Takes a BRAT database and performs additional analysis on the output variables in an attempt to identify any patterns.'
     )
     parser.add_argument('database', help='Path to at least one BRAT SQLite database (.gpkg). Add additional paths separated by spaces.', type=str)
     parser.add_argument('-o', '--output', help='(Optional) Path to an output directory where plots will be saved instead of displayed at runtime. If none provided, plots will not be saved.', type=str)
