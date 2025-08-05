@@ -29,7 +29,9 @@ import argparse
 import traceback
 import sqlite3
 import matplotlib.pyplot as plt
+import seaborn as sns       # may need to run $ conda install seaborn
 import numpy as np
+import pandas as pd
 
 
 def analyze(database, out_dir):
@@ -43,14 +45,57 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
-    capacity_comparison_bars(database, out_dir)
+
+    # capacity_means_box_whisker(database, out_dir)
+    # capacity_categories_stacked_bar(database, out_dir)
+    capacity_change_scatter(database, out_dir)
+
 
     print("Analysis complete.")
 
 
-def capacity_comparison_bars(database, out_dir):        # currently only oCC_EX
+def capacity_means_box_whisker(database, out_dir):
     """
-    Generate stacked bar charts of oCC_EX for each huc in the database
+    Generate box and whisker plots of oCC_EX for each FIS run in the database
+    :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
+    :param out_dir: optional path to a folder to save plots to
+    """
+
+    # use raw capacity data (for each reach) from "CombinedOutputs" table
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+
+        # figure out what DBs we are working with
+        cur.execute("SELECT Label FROM Stats")         # assuming Stats table exists
+        all_labels = [row[0] for row in cur.fetchall()]       # convert to list
+        oCC_labels = [label for label in all_labels if 'oCC_EX' in label]   # includes ST
+        short_labels = [label.replace("oCC_EX_", "") for label in oCC_labels]
+        print(f"Found {len(oCC_labels)} sources of oCC_EX data.")
+
+        cur.execute(f"SELECT {', '.join(oCC_labels)} FROM CombinedOutputs")
+        results = cur.fetchall()
+        data = pd.DataFrame(results, columns=short_labels)
+        print(data)
+    
+    # now construct the plot
+    ax = sns.boxplot(data, whis=(0,100))
+    ax.set_ylabel("Overall Dam Capacity (dams/km)")
+    ax.set_title("Distribution of BRAT Capacity Outputs Across FIS Adjustments")
+
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "fis-oCC_EX-box.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+
+
+def capacity_categories_stacked_bar(database, out_dir):        # currently only oCC_EX
+    """
+    Generate stacked bar charts of oCC_EX for each FIS run in the database
     :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
     :param out_dir: optional path to a folder to save plots to
     """
@@ -77,7 +122,7 @@ def capacity_comparison_bars(database, out_dir):        # currently only oCC_EX
         cur = conn.cursor()
 
         # figure out what DBs we are working with
-        cur.execute(f"SELECT Label FROM Stats")         # assuming Stats table exists
+        cur.execute("SELECT Label FROM Stats")         # assuming Stats table exists
         all_labels = [row[0] for row in cur.fetchall()]       # convert to list
         oCC_labels = [l for l in all_labels if 'oCC_EX' in l]
         print(f"Found {len(oCC_labels)} sources of oCC_EX data.")
@@ -111,12 +156,57 @@ def capacity_comparison_bars(database, out_dir):        # currently only oCC_EX
     
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, "oCC_EX-stacked-bar.png")
+        out_file_path = os.path.join(out_dir, "fis-oCC_EX-stacked-bar.png")
         plt.savefig(out_file_path)
         plt.close()
     else:
         plt.show()
 
+
+def capacity_change_scatter(database, out_dir):
+    """
+    Generate individual point plots of oCC_EX for each type of Adjustment, from the FIS runs in the database
+    :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
+    :param out_dir: optional path to a folder to save plots to
+    """
+
+    # useful dictionaries
+    adj_labels = {   # type of adj: [possible labels]
+        "Shift SPlow": ["LEspl", "Standard", "RTspl"],
+        "Shift SP2": ["LEsp2", "Standard", "RTsp2"],
+        "Shift Slope": ["LEslo", "Standard", "RTslo"],
+        "Scale Vegetation FIS": ["CPveg", "Standard", "STveg"],
+        "Scale Combined FIS": ["CPcomb", "Standard", "STcomb"],
+        "Scale Both FIS": ["CPboth", "Standard", "STboth"],
+        "Shape Vegetation FIS": ["Standard", "CVveg"],
+        "Shape Combined FIS": ["Standard", "CVcomb"],
+        "Shape Both FIS": ["Standard", "CVboth"]
+    }
+
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+
+        # TODO: change algorithm to not select Standard data each time?
+
+        # create a plot for each type of adjustment
+        for adj, labels in adj_labels.items():
+            cols = ', '.join([f"oCC_EX_{label}" for label in labels])
+            cur.execute(f"SELECT {cols} FROM CombinedOutputs")
+            results = cur.fetchall()
+            adj_data = pd.DataFrame(results, columns=labels)
+            print(adj_data)
+
+            sns.pointplot(adj_data, errorbar=None)
+            plt.ylabel("Overall Dam Capacity (dams/km)")
+            plt.title(f"Change in Capacity Output - {adj}")
+
+            if out_dir is not None:
+                print(f"...Saving plot to output dir...")
+                out_file_path = os.path.join(out_dir, f"fis-{adj.replace(' ', '-')}-pointplot.png")
+                plt.savefig(out_file_path)
+                plt.close()
+            else:
+                plt.show()
 
 
 def main():
