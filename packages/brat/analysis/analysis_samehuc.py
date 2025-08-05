@@ -48,7 +48,8 @@ def analyze(database, out_dir):
 
     # capacity_means_box_whisker(database, out_dir)
     # capacity_categories_stacked_bar(database, out_dir)
-    capacity_change_scatter(database, out_dir)
+    # capacity_by_adjustment_pointplot(database, out_dir)
+    # capacity_by_adjustment_reg(database, out_dir)
 
 
     print("Analysis complete.")
@@ -163,10 +164,10 @@ def capacity_categories_stacked_bar(database, out_dir):        # currently only 
         plt.show()
 
 
-def capacity_change_scatter(database, out_dir):
+def capacity_by_adjustment_pointplot(database, out_dir):
     """
     Generate individual point plots of oCC_EX for each type of Adjustment, from the FIS runs in the database
-    :param database: path to multi-huc combined BRAT database (with oCC_EX and WatershedID fields)
+    :param database: path to multi-huc combined BRAT database (with oCC_EX)
     :param out_dir: optional path to a folder to save plots to
     """
 
@@ -176,17 +177,15 @@ def capacity_change_scatter(database, out_dir):
         "Shift SP2": ["LEsp2", "Standard", "RTsp2"],
         "Shift Slope": ["LEslo", "Standard", "RTslo"],
         "Scale Vegetation FIS": ["CPveg", "Standard", "STveg"],
-        "Scale Combined FIS": ["CPcomb", "Standard", "STcomb"],
+        "Scale Hydro FIS": ["CPcomb", "Standard", "STcomb"],
         "Scale Both FIS": ["CPboth", "Standard", "STboth"],
         "Shape Vegetation FIS": ["Standard", "CVveg"],
-        "Shape Combined FIS": ["Standard", "CVcomb"],
+        "Shape Hydro FIS": ["Standard", "CVcomb"],
         "Shape Both FIS": ["Standard", "CVboth"]
     }
 
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
-
-        # TODO: change algorithm to not select Standard data each time?
 
         # create a plot for each type of adjustment
         for adj, labels in adj_labels.items():
@@ -197,7 +196,8 @@ def capacity_change_scatter(database, out_dir):
             print(adj_data)
 
             sns.pointplot(adj_data, errorbar=None)
-            plt.ylabel("Overall Dam Capacity (dams/km)")
+            plt.ylabel("Mean Dam Capacity (dams/km)")
+            plt.ylim(5, 8)
             plt.title(f"Change in Capacity Output - {adj}")
 
             if out_dir is not None:
@@ -207,6 +207,59 @@ def capacity_change_scatter(database, out_dir):
                 plt.close()
             else:
                 plt.show()
+
+
+def capacity_by_adjustment_reg(database, out_dir):
+    """
+    Generate scatter plots of oCC_EX for each type of Adjustment, from the means of each adjustment in Stats
+    :param database: path to multi-huc combined BRAT database (Stats table)
+    :param out_dir: optional path to a folder to save plots to
+    """
+
+    #                                      -------------- BROKEN --------------
+    # TODO: change this so it actually works. will need to change adj_labels to new monte db structure
+
+    # useful dictionaries
+    adj_labels = {   # type of adj: [possible labels]
+        "Shift SPlow": ["LEspl", "Standard", "RTspl"],
+        "Shift SP2": ["LEsp2", "Standard", "RTsp2"],
+        "Shift Slope": ["LEslo", "Standard", "RTslo"],
+        "Scale Vegetation FIS": ["CPveg", "Standard", "STveg"],
+        "Scale Hydro FIS": ["CPcomb", "Standard", "STcomb"],
+        "Scale Both FIS": ["CPboth", "Standard", "STboth"],
+        "Shape Vegetation FIS": ["Standard", "CVveg"],
+        "Shape Hydro FIS": ["Standard", "CVcomb"],
+        "Shape Both FIS": ["Standard", "CVboth"]
+    }
+
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+
+        # store capacity means
+        cur.execute(f"SELECT Label, Mean FROM Stats WHERE Label LIKE '%oCC_EX%'")
+        cap_data = cur.fetchall()   # list of (label, mean) tuples
+        print(cap_data)
+
+        # create a subplot for each type of adjustment, as well as a master plot for all
+        for adj, labels in adj_labels.items():
+            adj_data = pd.DataFrame(columns=labels)
+            for label in labels:
+                adj_data.loc[label] = [row[1] for row in cap_data if label in row[0]]
+            print(adj_data)
+
+            # individual plot
+            sns.regplot(data=adj_data, ci=None)
+            plt.ylim(5, 8)
+            plt.ylabel("Mean Dam Capacity (dams/km)")
+            plt.title(f"BRAT Outputs under {adj}")
+            if out_dir is not None:
+                print(f"...Saving plot to output dir...")
+                out_file_path = os.path.join(out_dir, f"fis-{adj.replace(' ', '-')}-scatter.png")
+                plt.savefig(out_file_path)
+                plt.close()
+            else:
+                plt.show()
+
 
 
 def main():
