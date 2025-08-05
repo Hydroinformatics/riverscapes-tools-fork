@@ -27,7 +27,7 @@ import sqlite3
 # Paths to your source databases                               # SET THESE
 source_dbs = {
     # 'path to db': 'shorthand label'
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Standard-FIS/outputs/brat.gpkg': 'ST',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Standard-FIS/outputs/brat.gpkg': 'Standard',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'LEspl',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'RTspl',
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'LEsp2',
