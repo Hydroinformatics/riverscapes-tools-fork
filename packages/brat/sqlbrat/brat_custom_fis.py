@@ -499,6 +499,11 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
 
     ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- '''
     # Log FIS adjustments in a separate table just for records
+    default_adjustment_values = {
+        'shift': 0.0,       # no shift
+        'scale': 1.0,       # no scaling
+        'shape': 0.0        # any val != 1.0 or 2.0
+    }
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Recording adjustments...')
         create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
@@ -506,8 +511,11 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
         
         # prepare data to log
         comb_adj_types_log = [None, None, None]     # need types in list format for DB
-        for i in range(len(comb_adj_types_log)):
-            comb_adj_types_log[i] = comb_adj_type if comb_adj_vals[i] is not None else None
+        for i in range(len(comb_adj_vals)):
+            if comb_adj_vals is None or comb_adj_vals[i] == default_adjustment_values[comb_adj_type]:
+                comb_adj_types_log[i] = None
+            else:
+                comb_adj_types_log[i] = comb_adj_type
         adjustment_data = [
             ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_val],
             ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_val],

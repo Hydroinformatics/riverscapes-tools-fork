@@ -89,6 +89,8 @@ brat_custom_fis $HUC10 \
     --waterbodies $RS/hydrology/nhdplushr.gpkg/NHDWaterbody \
     --max_waterbody 0.001 \
     --verbose \
+    --veg_adj_type shape \
+    --veg_adj_val 1.0 \
     --comb_adj_type shape \
     --comb_adj_vals 1.0,1.0,1.0
 '''
