@@ -28,7 +28,7 @@ adjustment_types = ['shift', 'scale', 'shape']
 default_adjustment_values = {
     'shift': 0.0,       # no shift
     'scale': 1.0,       # no scaling
-    'shape': -1.0       # not used
+    'shape': 0.0        # indicates original shapes should be used
 }
 
 def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
@@ -51,15 +51,13 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     if adjustment_type:
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
-        if not adjustment_values and adjustment_type != 'shape':
-            raise ValueError(f"Please provide adjustment values: list of [splow, sp2, slope] shift amounts or scale factors.")
-        if adjustment_type == 'scale':
-            for val in adjustment_values:
-                if val <= 0:
-                    raise ValueError(f"Invalid scale factor: {val}. Must be greater than 0.")
-        if adjustment_type == 'shape':
-            log.warning("Shape adjustments must be done manually in the code. No automatic adjustments applied.")
-            adjustment_values = None
+        if not adjustment_values:
+            raise ValueError(f"Please provide adjustment values: list of [splow, sp2, slope] shift amounts, scale factors, or curve types.")
+        for val in adjustment_values:
+            if adjustment_type == 'scale' and val <= 0:
+                raise ValueError(f"Invalid adjustment value scale factor: {val}. Must be greater than 0.")
+            if adjustment_type == 'shape' and (val != 1.0 or val != 2.0):
+                raise ValueError(f"Invalid adjustment value curve type: {val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
 
         # output folder for fis images
         fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
@@ -149,9 +147,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     slope = ctrl.Antecedent(np.arange(0, 1, 0.0001), 'input4')
     density = ctrl.Consequent(np.arange(0, 45, 0.01), 'result')
 
-    # build membership functions for each antecedent and consequent object --- apply adjustments here
+    # build membership functions for each antecedent and consequent object
     
-    # we do NOT adjust ovc or density
+    # we do NOT adjust ovc or density output - build these first
     ovc['none'] = fuzz.trimf(ovc.universe, [0, 0, 0.1])
     ovc['rare'] = fuzz.trapmf(ovc.universe, [0, 0.1, 0.5, 1.5])
     ovc['occasional'] = fuzz.trapmf(ovc.universe, [0.5, 1.5, 4, 8])
@@ -238,21 +236,36 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
             sp2[cat] = fuzz.trimf(sp2.universe, [a, b, c])
         
     elif adj_type == 'shape':
-        log.info("Running custom-defined MF shapes.")
-        # CUSTOM SHAPES DEFINED HERE
-        splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
-        splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
-        splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
+        
+        # SPlow
+        if adj_vals[0] == 1.0:
+            log.info("Running 'best fit' custom MF shapes for SPLow.")
+            # TODO
+        if adj_vals[0] == 2.0:
+            log.info("Running 'loose fit' custom MF shapes for SPLow.")
+            splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
+            splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
+            splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
 
-        sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
-        sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
-        sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
-        sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
+        # SP2
+        if adj_vals[1] == 1.0:
+            log.info("Running 'best fit' custom MF shapes for SP2.")
+        if adj_vals[1] == 2.0:
+            log.info("Running 'loose fit' custom MF shapes for SP2.")
+            sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
+            sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
+            sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
+            sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
 
-        slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
-        slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
-        slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165)
-        slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585)
+        # Slope
+        if adj_vals[2] == 1.0:
+            log.info("Running 'best fit' custom MF shapes for Slope.")
+        if adj_vals[2] == 2.0:
+            log.info("Running 'loose fit' custom MF shapes for Slope.")
+            slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
+            slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
+            slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165)
+            slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585)
 
 
     # build fis rule table

@@ -1,4 +1,9 @@
-""" Build a BRAT project by segmenting a river network to a specified
+""" Modified BRAT script for Monte Carlo FIS Sensitivity Analysis
+
+    Evan Hackstadt
+    July 2025
+
+    Build a BRAT project by segmenting a river network to a specified
     length and then extract the input values required to run the
     BRAT model for each reach segment from various GIS layers.
 
@@ -37,6 +42,9 @@ from sqlbrat.utils.dam_reach_type import dam_reach_type
 from sqlbrat.brat_report import BratReport
 from sqlbrat.__version__ import __version__
 
+''' FIS Sensitivity Analysis '''
+from analysis.vegetation_fis_custom import vegetation_fis_custom
+from analysis.combined_fis_custom import combined_fis_custom
 
 Path = str
 
@@ -431,6 +439,36 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_drainage_area = None
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (21 lines)'''
+    '''Acceptable adjustments:
+    # VEG TYPE: 'scale' or 'shape' or None
+    # VEG VALUE: float or None
+    # COMB TYPE: 'shift', 'scale', 'shape', or None
+    # COMB VALUE: list of floats or Nones, for MFs: [splow, sp2, slope]
+    
+    # SHIFT val: float representing the actual units to shift MF by (neg = left, pos = right)
+    # SCALE val: float representing the scaling factor ((0,1) = compress, >1 = stretch)
+    # SHAPE val: either 1.0 ('best fit' curves, using gaussmf and pimf) or 2.0 ('loose fit' curves, using gaussmf and gbellmf)
+    '''
+    veg_adj_type = None      # see above instructions before setting these
+    veg_adj_value = None
+    comb_adj_type = None
+    comb_adj_values = [None, None, None]       # [splow, sp2, slope] - keep in list format even if all None
+    
+    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {veg_adj_type}')
+    log.info(f'Value = {veg_adj_value}')
+    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {comb_adj_type}')
+    log.info(f'Values: SPlow = {comb_adj_values[0]}, SP2 = {comb_adj_values[1]}, Slope = {comb_adj_values[2]}')
+    
+    fis_dir_path = os.path.join(output_folder, "fis/")
+    if os.path.exists(fis_dir_path):
+        log.info(f"FIS directory already exists at {fis_dir_path}")
+    else:
+        os.mkdir(fis_dir_path)
+        log.info(f"Created FIS directory at {fis_dir_path}")
+
     for epoch, prefix, ltype, orig_id in Epochs:
 
         # Calculate the vegetation suitability for each buffer
@@ -438,13 +476,42 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
 
         # Run the vegetation and then combined FIS for this epoch
 
-        vegetation_fis(outputs_gpkg_path, epoch, prefix)
-        combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
+        ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (4 lines)'''
+        # vegetation_fis(outputs_gpkg_path, epoch, prefix)
+        # combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
+        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, 
+                              adjustment_type=veg_adj_type, adjustment_value=veg_adj_value)
+        combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, 
+                            adjustment_type=comb_adj_type, adjustment_values=comb_adj_values)
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
         _veg_suit_raster_node, veg_suit_raster = project.add_project_raster(proj_nodes['Intermediates'], LayerTypes[ltype], None, True)
         output_vegetation_raster(outputs_gpkg_path, orig_raster, veg_suit_raster, epoch, prefix, ecoregion)
+
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- (15 lines)'''
+    # Log FIS adjustments in a separate table just for records
+    with SQLiteCon(outputs_gpkg_path) as database:
+        log.info('Recording adjustments...')
+        create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
+        database.curs.execute(create_stmt)
+        
+        # prepare data to log
+        comb_adj_types_log = [None, None, None]     # need for distinct db entries
+        for i in range(len(comb_adj_types_log)):
+            comb_adj_types_log[i] = comb_adj_type if comb_adj_values[i] is not None else None
+        adjustment_data = [
+            ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_value],
+            ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_value],
+            ["Combined FIS", "SPlow", comb_adj_types_log[0], comb_adj_values[0]],
+            ["Combined FIS", "SP2", comb_adj_types_log[1], comb_adj_values[1]],
+            ["Combined FIS", "Slope", comb_adj_types_log[2], comb_adj_values[2]],
+        ]
+        # insert
+        database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
+        database.conn.commit()
     
+
+
     # Calculate departure from historical conditions
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Calculating departure from historic conditions')

@@ -28,21 +28,21 @@ import sqlite3
 source_dbs = {
     # 'path to db': 'shorthand label'
     '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Standard-FIS/outputs/brat.gpkg': 'Standard',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'LEspl',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'RTspl',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'LEsp2',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Right/outputs/brat.gpkg': 'RTsp2',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Left/outputs/brat.gpkg': 'LEslo',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Right/outputs/brat.gpkg': 'RTslo',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Compress/outputs/brat.gpkg': 'CPveg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Stretch/outputs/brat.gpkg': 'STveg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Compress/outputs/brat.gpkg': 'CPcomb',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Stretch/outputs/brat.gpkg': 'STcomb',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Compress/outputs/brat.gpkg': 'CPboth',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Stretch/outputs/brat.gpkg': 'STboth',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Veg/outputs/brat.gpkg': 'CVveg',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Comb/outputs/brat.gpkg': 'CVcomb',
-    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg': 'CVboth'
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Left/outputs/brat.gpkg': 'SPL-10',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SPlow-Right/outputs/brat.gpkg': 'SPL+10',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Left/outputs/brat.gpkg': 'SP2-50',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-SP2-Right/outputs/brat.gpkg': 'SP2+50',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Left/outputs/brat.gpkg': 'SLO-1',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shift-Slope-Right/outputs/brat.gpkg': 'SLO+1',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Compress/outputs/brat.gpkg': 'VEGx0.75',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Veg-Stretch/outputs/brat.gpkg': 'VEGx1.5',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Compress/outputs/brat.gpkg': 'HYDx0.75',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Comb-Stretch/outputs/brat.gpkg': 'HYDx1.5',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Compress/outputs/brat.gpkg': 'BOTHx0.75',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Scale-Both-Stretch/outputs/brat.gpkg': 'BOTHx1.5',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Veg/outputs/brat.gpkg': 'VEGcv2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Comb/outputs/brat.gpkg': 'HYDcv2',
+    '/Users/evan/Code/OSU-EB3-REU/sqlBRAT/fis-runs/Lower-Siletz-River-1710020407/Shape-Both/outputs/brat.gpkg': 'BOTHcv2'
 }
 # ReachIDs should be equal in all source dbs
 # Shorthand label will be used in the columns of the merged db
