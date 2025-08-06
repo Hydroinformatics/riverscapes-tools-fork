@@ -56,7 +56,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
         if adjustment_type == 'scale' and adjustment_value <= 0.0:
                 raise ValueError(f"Invalid adjustment value scale factor: {adjustment_value}. Must be greater than 0.")
-        if adjustment_type == 'shape' and (adjustment_value != 1.0 or adjustment_value != 2.0):
+        if adjustment_type == 'shape' and (adjustment_value != 1.0 and adjustment_value != 2.0):
                 raise ValueError(f"Invalid adjustment value: {adjustment_value}. Choose either 1.0 (best fit) or 2.0 (loose fit).")
 
         # output folder for fis images
@@ -170,20 +170,20 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         # 'best fit' curves
         if adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes.")
-            riparian['unsuitable'] = fuzz.pimf(riparian.universe, 0, 0, 0.1, 1)
+            riparian['unsuitable'] = fuzz.pimf(riparian.universe, -0.01, 0, 0.1, 1) # need to cover 0 input
             riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
             riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
             riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
             riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
 
-            streamside['unsuitable'] = fuzz.pimf(riparian.universe, 0, 0, 0.1, 1)
+            streamside['unsuitable'] = fuzz.pimf(riparian.universe, -0.01, 0, 0.1, 1) # need to cover 0 input
             streamside['barely'] = fuzz.gaussmf(streamside.universe, 1, .4)
             streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
             streamside['suitable'] = fuzz.gaussmf(streamside.universe, 3, .4)
             streamside['preferred'] = fuzz.gaussmf(streamside.universe, 4, .4)
         
         # 'loose fit' curves
-        if adj_val == 2.0:
+        elif adj_val == 2.0:
             log.info("Running 'loose fit' custom MF shapes.")
             riparian['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
             riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
@@ -196,7 +196,6 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
             streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
             streamside['suitable'] = fuzz.gaussmf(streamside.universe, 3, .4)
             streamside['preferred'] = fuzz.gaussmf(streamside.universe, 4, .4)
-
     
 
     # build fis rule table --- we don't adjust this for FIS SA
@@ -263,6 +262,7 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
 
     progbar.finish()
     log.info('Custom Veg FIS Done')
+    
     
     '''VISUALIZE MEMBERSHIP FUNCTIONS'''
     log.info('Visualizing Adjusted MFs...')
