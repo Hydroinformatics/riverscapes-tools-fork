@@ -170,13 +170,21 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         # 'best fit' curves
         if adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes.")
-            # CUSTOM SHAPES DEFINED HERE
-            # TODO
+            riparian['unsuitable'] = fuzz.pimf(riparian.universe, 0, 0, 0.1, 1)
+            riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
+            riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
+            riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
+            riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
+
+            streamside['unsuitable'] = fuzz.pimf(riparian.universe, 0, 0, 0.1, 1)
+            streamside['barely'] = fuzz.gaussmf(streamside.universe, 1, .4)
+            streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
+            streamside['suitable'] = fuzz.gaussmf(streamside.universe, 3, .4)
+            streamside['preferred'] = fuzz.gaussmf(streamside.universe, 4, .4)
         
         # 'loose fit' curves
         if adj_val == 2.0:
             log.info("Running 'loose fit' custom MF shapes.")
-            # CUSTOM SHAPES DEFINED HERE
             riparian['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
             riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
             riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)

@@ -240,32 +240,62 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         # SPlow
         if adj_vals[0] == 1.0:
             log.info("Running 'best fit' custom MF shapes for SPLow.")
-            # TODO
-        if adj_vals[0] == 2.0:
+            splow['can build'] = fuzz.pimf(splow.universe, 0, 0, 150, 175)
+            splow['probably can build'] = fuzz.pimf(splow.universe, 150, 175, 180, 190)
+            splow['cannot build'] = fuzz.pimf(splow.universe, 180, 190, 10000, 10000)
+        elif adj_vals[0] == 2.0:
             log.info("Running 'loose fit' custom MF shapes for SPLow.")
             splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
             splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
             splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
+        else:
+            # resort to default shapes if something went wrong
+            log.warning(f"WARNING: invalid adjustment value for SPlow: {adj_vals[0]}. Resorting to standard MF shapes.")
+            splow['can'] = fuzz.trapmf(splow.universe, [0, 0, 150, 175])
+            splow['probably'] = fuzz.trapmf(splow.universe, [150, 175, 180, 190])
+            splow['cannot'] = fuzz.trapmf(splow.universe, [180, 190, 10000, 10000])
 
         # SP2
         if adj_vals[1] == 1.0:
             log.info("Running 'best fit' custom MF shapes for SP2.")
+            sp2['persists'] = fuzz.pimf(sp2.universe, 0, 0, 1000, 1200)
+            sp2['breach'] = fuzz.pimf(sp2.universe, 1000, 1200, 1200, 1600)
+            sp2['occasional blowout'] = fuzz.pimf(sp2.universe, 1200, 1600, 1600, 2400)
+            sp2['blowout'] = fuzz.pimf(sp2.universe, 1600, 2400, 10000, 10000)
         if adj_vals[1] == 2.0:
             log.info("Running 'loose fit' custom MF shapes for SP2.")
             sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
             sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
             sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
             sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
+        else:
+            # resort to default shapes if something went wrong
+            log.warning(f"WARNING: invalid adjustment value for SP2: {adj_vals[1]}. Resorting to standard MF shapes.")
+            sp2['persists'] = fuzz.trapmf(sp2.universe, [0, 0, 1000, 1200])
+            sp2['breach'] = fuzz.trimf(sp2.universe, [1000, 1200, 1600])
+            sp2['oblowout'] = fuzz.trimf(sp2.universe, [1200, 1600, 2400])
+            sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600, 2400, 10000, 10000])
 
         # Slope
         if adj_vals[2] == 1.0:
             log.info("Running 'best fit' custom MF shapes for Slope.")
+            slope['flat'] = fuzz.pimf(slope.universe, 0, 0, 0.0002, 0.005)
+            slope['can build'] = fuzz.pimf(slope.universe, 0.0002, 0.005, 0.12, 0.15)
+            slope['probably can build'] = fuzz.pimf(slope.universe, 0.12, 0.15, 0.17, 0.23)
+            slope['cannot build'] = fuzz.pimf(slope.universe, 0.17, 0.23, 1, 1)
         if adj_vals[2] == 2.0:
             log.info("Running 'loose fit' custom MF shapes for Slope.")
             slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
             slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
             slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165)
             slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585)
+        else:
+            # resort to default shapes if something went wrong
+            log.warning(f"WARNING: invalid adjustment value for Slope: {adj_vals[2]}. Resorting to standard MF shapes.")
+            slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002, 0.005])
+            slope['can'] = fuzz.trapmf(slope.universe, [0.0002, 0.005, 0.12, 0.15])
+            slope['probably'] = fuzz.trapmf(slope.universe, [0.12, 0.15, 0.17, 0.23])
+            slope['cannot'] = fuzz.trapmf(slope.universe, [0.17, 0.23, 1, 1])
 
 
     # build fis rule table
