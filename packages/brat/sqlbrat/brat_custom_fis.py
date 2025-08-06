@@ -100,12 +100,15 @@ Epochs = [
 ]
 
 
-def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
+def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
          anthro_flowlines: Path, anthro_igos: Path, anthro_dgos: Path, hillshade: Path,
          existing_veg: Path, historical_veg: Path, output_folder: Path, streamside_buffer: float,
          riparian_buffer: float, reach_codes: List[str], canal_codes: List[str], peren_codes: List[str],
          flow_areas: Path, waterbodies: Path, max_waterbody: float, valley_bottom: Path,
-         meta: Dict[str, str]):
+         meta: Dict[str, str],
+         veg_adj_type: str, veg_adj_val: float,
+         comb_adj_type: str, comb_adj_vals: List[float],
+         ):
     """Build a BRAT project by segmenting a reach network and copying
     all the necessary layers into the resultant BRAT project
 
@@ -131,12 +134,34 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_waterbody {float} -- Area (sqm) of largest waterbody to be retained.
         valley_bottom {str} -- Path to valley bottom polygon layer.
         meta (Dict[str,str]): dictionary of riverscapes metadata key: value pairs
+        
+        FIS Sensitivity Analysis -- Acceptable Args
+        # VEG TYPE: 'scale' or 'shape' or None
+        # VEG VALUE: float or None
+        # COMB TYPE: 'shift', 'scale', 'shape', or None
+        # COMB VALUE: list of floats or Nones, for MFs: [splow, sp2, slope]
+        
+        # SHIFT val: float representing the actual units to shift MF by (neg = left, pos = right)
+        # SCALE val: float representing the scaling factor ((0,1) = compress, >1 = stretch)
+        # SHAPE val: either 1.0 ('best fit' curves, using gaussmf and pimf) or 2.0 ('loose fit' curves, using gaussmf and gbellmf)
     """
 
     log = Logger("BRAT")
     log.info(f'Starting BRAT v.{cfg.version}')
     log.info(f'HUC: {huc}')
     log.info(f'EPSG: {cfg.OUTPUT_EPSG}')
+    
+    
+    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {veg_adj_type}')
+    log.info(f'Value = {veg_adj_val}')
+    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {comb_adj_type}')
+    log.info(f'Values: SPlow = {comb_adj_vals[0]}, SP2 = {comb_adj_vals[1]}, Slope = {comb_adj_vals[2]}')
+    
+    if veg_adj_type is None and comb_adj_type is None:
+        log.warning(f'NO FIS ADJUSTMENTS SPECIFIED. Running BRAT with Standard FIS...')
+    
 
     augment_layermeta()
 
@@ -439,28 +464,10 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_drainage_area = None
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
-    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- '''
-    '''Acceptable adjustments:
-    # VEG TYPE: 'scale' or 'shape' or None
-    # VEG VALUE: float or None
-    # COMB TYPE: 'shift', 'scale', 'shape', or None
-    # COMB VALUE: list of floats or Nones, for MFs: [splow, sp2, slope]
-    
-    # SHIFT val: float representing the actual units to shift MF by (neg = left, pos = right)
-    # SCALE val: float representing the scaling factor ((0,1) = compress, >1 = stretch)
-    # SHAPE val: either 1.0 ('best fit' curves, using gaussmf and pimf) or 2.0 ('loose fit' curves, using gaussmf and gbellmf)
-    '''
-    veg_adj_type = None      # see above instructions before setting these
-    veg_adj_value = None
-    comb_adj_type = None
-    comb_adj_values = [None, None, None]       # [splow, sp2, slope] - keep in list format even if all None
-    
-    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
-    log.info(f'Type = {veg_adj_type}')
-    log.info(f'Value = {veg_adj_value}')
-    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
-    log.info(f'Type = {comb_adj_type}')
-    log.info(f'Values: SPlow = {comb_adj_values[0]}, SP2 = {comb_adj_values[1]}, Slope = {comb_adj_values[2]}')
+    ''' ---------------------- FIS Sensitivity Analysis begins here: ---------------------- '''
+    # we have parameters veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
+    if comb_adj_vals == None:
+        comb_adj_vals = [None, None, None]  # ensure list format even if all None
     
     fis_dir_path = os.path.join(output_folder, "fis/")
     if os.path.exists(fis_dir_path):
@@ -481,9 +488,9 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         # vegetation_fis(outputs_gpkg_path, epoch, prefix)      # turned OFF for Sensitivity Analysis
         # combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)     # turned OFF for Sensitivity Analysis
         vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, 
-                              adjustment_type=veg_adj_type, adjustment_value=veg_adj_value)
+                              adjustment_type=veg_adj_type, adjustment_value=veg_adj_val)
         combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, 
-                            adjustment_type=comb_adj_type, adjustment_values=comb_adj_values)
+                            adjustment_type=comb_adj_type, adjustment_values=comb_adj_vals)
         ''' ----------------------               (end)               ----------------------'''
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
@@ -498,15 +505,15 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         database.curs.execute(create_stmt)
         
         # prepare data to log
-        comb_adj_types_log = [None, None, None]     # need for distinct db entries
+        comb_adj_types_log = [None, None, None]     # need types in list format for DB
         for i in range(len(comb_adj_types_log)):
-            comb_adj_types_log[i] = comb_adj_type if comb_adj_values[i] is not None else None
+            comb_adj_types_log[i] = comb_adj_type if comb_adj_vals[i] is not None else None
         adjustment_data = [
-            ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_value],
-            ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_value],
-            ["Combined FIS", "SPlow", comb_adj_types_log[0], comb_adj_values[0]],
-            ["Combined FIS", "SP2", comb_adj_types_log[1], comb_adj_values[1]],
-            ["Combined FIS", "Slope", comb_adj_types_log[2], comb_adj_values[2]],
+            ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_val],
+            ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_val],
+            ["Combined FIS", "SPlow", comb_adj_types_log[0], comb_adj_vals[0]],
+            ["Combined FIS", "SP2", comb_adj_types_log[1], comb_adj_vals[1]],
+            ["Combined FIS", "Slope", comb_adj_types_log[2], comb_adj_vals[2]],
         ]
         # insert
         database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
@@ -661,6 +668,13 @@ def main():
     parser.add_argument('--meta', help='riverscapes project metadata as comma separated key=value pairs', type=str)
     parser.add_argument('--verbose', help='(optional) a little extra logging ', action='store_true', default=False)
     parser.add_argument('--debug', help='(optional) more output about things like memory usage. There is a performance cost', action='store_true', default=False)
+    
+    ''' ———————— FIS SENSITIVITY ANALYSIS ARGS ———————— '''
+    parser.add_argument('--veg_adj_type', help="(optional) Type of adjustment applied to the Vegetation FIS: 'scale' or 'shape'.", type=str, default=None)
+    parser.add_argument('--veg_adj_val', help="(optional) Float value of Vegetation FIS adjustment: scale factor or (1.0 for 'best fit' shapes, 2.0 for 'loose fit' shapes).", type=float, default=None)
+    parser.add_argument('--comb_adj_type', help="(optional) Type of adjustment applied to the Combined FIS: 'shift' or 'scale' or 'shape'.", type=str, default=None)
+    parser.add_argument('--comb_adj_vals', help="(optional) Comma delimited float values of Combined FIS adjustment in order: SPlow, SP2, Slope.", type=str, default=None)
+    
 
     # Substitute patterns for environment varaibles
     args = dotenv.parse_args_env(parser)
@@ -668,6 +682,14 @@ def main():
     reach_codes = args.reach_codes.split(',') if args.reach_codes else None
     canal_codes = args.canal_codes.split(',') if args.canal_codes else None
     peren_codes = args.peren_codes.split(',') if args.peren_codes else None
+    
+    ''' ———————— FIS SENSITIVITY ANALYSIS ARGS ———————— '''
+    veg_adj_type = args.veg_adj_type if args.veg_adj_type else None
+    veg_adj_val = args.veg_adj_val if args.veg_adj_val else None
+    comb_adj_type = args.comb_adj_type if args.comb_adj_type else None
+    comb_adj_vals = args.comb_adj_vals.split(',') if args.comb_adj_vals else None
+    comb_adj_vals = [float(val) for val in comb_adj_vals]   # cast each to float
+
 
     # Initiate the log file
     log = Logger("BRAT Build")
@@ -680,25 +702,29 @@ def main():
         if args.debug is True:
             from rscommons.debug import ThreadRun
             memfile = os.path.join(args.output_folder, 'brat_build_memusage.log')
-            retcode, max_obj = ThreadRun(brat, memfile,
+            retcode, max_obj = ThreadRun(brat_custom_fis, memfile,
                                          args.huc, args.hydro_flowlines, args.hydro_igos, args.hydro_dgos,
                                          args.anthro_flowlines, args.anthro_igos, args.anthro_dgos,
                                          args.hillshade, args.existing_veg, args.historical_veg, args.output_folder,
                                          args.streamside_buffer, args.riparian_buffer,
                                          reach_codes, canal_codes, peren_codes,
                                          args.flow_areas, args.waterbodies, args.max_waterbody,
-                                         args.valley_bottom, meta
+                                         args.valley_bottom,
+                                         meta,
+                                         veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
                                          )
             log.debug('Return code: {}, [Max process usage] {}'.format(retcode, max_obj))
         else:
-            brat(
+            brat_custom_fis(
                 args.huc, args.hydro_flowlines, args.hydro_igos, args.hydro_dgos,
                 args.anthro_flowlines, args.anthro_igos, args.anthro_dgos,
                 args.hillshade, args.existing_veg, args.historical_veg, args.output_folder,
                 args.streamside_buffer, args.riparian_buffer,
                 reach_codes, canal_codes, peren_codes,
                 args.flow_areas, args.waterbodies, args.max_waterbody,
-                args.valley_bottom, meta
+                args.valley_bottom,
+                meta,
+                veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
             )
 
     except Exception as ex:

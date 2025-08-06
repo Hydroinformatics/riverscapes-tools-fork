@@ -67,6 +67,32 @@ brat $HUC10 \
     --max_waterbody 0.001 \
     --verbose
 
+''' CUSTOM FIS SA:
+brat_custom_fis $HUC10 \
+    $RS/topography/dem_hillshade.tif \
+    $HYDRO/outputs/hydro.gpkg/vwReaches \
+    $HYDRO/outputs/hydro.gpkg/vwIGOs \
+    $HYDRO/outputs/hydro.gpkg/vwDGOs \
+    $ANTHRO/outputs/anthro.gpkg/vwReaches \
+    $ANTHRO/outputs/anthro.gpkg/vwIgos \
+    $ANTHRO/outputs/anthro.gpkg/vwDgos \
+    $RS/vegetation/existing_veg.tif \
+    $RS/vegetation/historic_veg.tif \
+    $VBET/outputs/vbet.gpkg/vbet_full \
+    30.0 \
+    100.0 \
+    $OUTPUT_DIR \
+    --reach_codes 33400,33600,33601,33603,46000,46003,46006,46007 \
+    --canal_codes 33600,33601,33603 \
+    --peren_codes 46006 \
+    --flow_areas $RS/hydrology/nhdplushr.gpkg/NHDArea \
+    --waterbodies $RS/hydrology/nhdplushr.gpkg/NHDWaterbody \
+    --max_waterbody 0.001 \
+    --verbose \
+    --comb_adj_type shape \
+    --comb_adj_vals 1.0,1.0,1.0
+'''
+
 '''
 usage: brat [-h] [--reach_codes REACH_CODES] [--canal_codes CANAL_CODES]
             [--peren_codes PEREN_CODES] [--flow_areas FLOW_AREAS]
