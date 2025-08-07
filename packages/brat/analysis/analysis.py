@@ -1,6 +1,6 @@
 """
 Performs additional analysis on BRAT output data (a single BRAT database).
-Checks for correlation between dam capacity and various other variables.
+Generates input histograms, scatters between various inputs and dam capacity, and more.
 Can print or save matplotlib plots.
 
 INSTRUCTIONS:
@@ -12,17 +12,15 @@ July 2025
 
 
 
-# TODO:
-    # clean up: too many graphs; decide which are relevant
-
 #imports
 import os
 import sys
 import argparse
 import traceback
 import sqlite3
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def analyze(database, out_dir):
@@ -37,75 +35,43 @@ def analyze(database, out_dir):
 
     # > Call analysis functions. Can turn these on or off
     
-    suitability_distribution(database, out_dir)
     input_distributions(database, out_dir)
-    output_distribution(database, out_dir)
-    capacity_scatter_plots(database, out_dir)
-    capacity_scatter_plots_zoomed(database, out_dir)
-    hydro_limitation(database, out_dir)
+    # output_distribution(database, out_dir)
+    # capacity_scatter_plots(database, out_dir)
+    # capacity_scatter_plots_zoomed(database, out_dir)
+    # hydro_limitation(database, out_dir)
     # capacity_bar_plots(database, out_dir)
 
     print("Analysis complete.")
 
 
-def suitability_distribution(database, out_dir):
-    """
-    Generate histograms of iVeg_30EX and iVeg100EX (mean veg suitabilities for each reach)
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-
-    vars = {
-        'iVeg_30EX': 'Streamside (30m) vegetation suitability',
-        'iVeg100EX': 'Riparian (100m) vegetation suitability'
-    }
-
-    # Generate histograms
-    for var, descr in vars.items():
-        var_data = select_var(database, var)
-        plt.hist(var_data, bins=10, edgecolor='black')
-        plt.xlabel(var)
-        plt.title(f"{descr} Distribution")
-        print(f"...Plot for {var} generated...")
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "suitability-distribution-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
 
 def input_distributions(database, out_dir):
     """
-    Generate histograms of the distribution of certain input variables
-        for reaches with Frequent or Pervasive dams (oCC_EX > 5)
+    Generate histograms of the distribution of relevant input variables. Options to filter.
     :param database: path to a BRAT database (.gpkg)
     :param out_dir: optional path to a folder to save plots to
     """
     x_vars = [
-        # ('var name', 'description', num_bins, x_scalar)
-        # note: set x_scalar to 1.00 if you want the full histogram
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, 1.00),
-        ('iHyd_SP2', 'Peak Flow (watts)', 50, 0.5),
-        ('iGeo_Slope', 'Stream Slope', 50, 1.00),
-        ('iGeo_DA', 'Upstream Drainage Area (sq km)', 50, 0.005)
+        # ('var name', 'description', num_bins, log_scale, cutoff_val)
+        # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
+        ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
+        ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
+        ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 30),
+        ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 2200),
+        ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
     ]
 
-    capacity_data = select_var(database, 'oCC_EX')
+    kde_switch = False
 
-    for var, descr, num_bins, x_scalar in x_vars:
+    for var, descr, num_bins, log, cutoff_val in x_vars:
         var_data = select_var(database, var)
-        # filter data to high capacity
-        pairs = dict(zip(var_data, capacity_data))
-        filtered_pairs = {var: cap for var, cap in pairs.items() if cap > 5}
 
-        # plot
-        plt.hist(filtered_pairs.keys(), bins=num_bins)
+        # plot raw data
+        sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
         plt.xlabel(descr)
         plt.ylabel('Count')
-        plt.title("Distribution of {} at Frequent/Pervasive reaches".format(var))
+        plt.title("Distribution of {} in Siletz Watershed".format(var))
         print("...{}-bin histogram for {} generated...".format(num_bins, var))
 
         if out_dir is not None:
@@ -116,19 +82,33 @@ def input_distributions(database, out_dir):
         else:
             plt.show()
 
-        if x_scalar != 1.00:
-            # simply remove pairs past the x-cutoff
-            cutoff = max(filtered_pairs.keys())*x_scalar
-            filtered_pairs = {var: cap for var, cap in filtered_pairs.items() if var < cutoff}
-            # plot
-            plt.hist(filtered_pairs.keys(), bins=num_bins)
+        # also generate an additional log-scale histogram if requested
+        if log:
+            print(f"Log-scale histogram also requested for {var}. Plotting...")
+            sns.histplot(data=var_data, bins=num_bins, kde=kde_switch, log_scale=log)
             plt.xlabel(descr)
             plt.ylabel('Count')
-            plt.title("[subset] Distribution of {} at Frequent/Pervasive reaches".format(var))
-            print("...{}-bin histogram for {} generated...".format(num_bins, var))
+            plt.title("Log-Scale Distribution of {} in Siletz Watershed".format(var))
 
             if out_dir is not None:
-                print(f"...Saving plot to output dir...")
+                print("...Saving {}-bin log-scale histogram for {}...".format(num_bins, var))
+                out_file_path = os.path.join(out_dir, "input-distribution-{}-log.png".format(var))
+                plt.savefig(out_file_path)
+                plt.close()
+            else:
+                plt.show()
+
+        # also generate an additional cut-off histogram if requested
+        if cutoff_val:
+            filtered_var_data = [val for val in var_data if val <= cutoff_val]
+            print(f"Cut-off at {cutoff_val} histogram also requested for {var}. Plotting...")
+            sns.histplot(data=filtered_var_data, bins=num_bins, kde=kde_switch)
+            plt.xlabel(descr)
+            plt.ylabel('Count')
+            plt.title("Filtered Distribution of {} in Siletz Watershed".format(var))
+
+            if out_dir is not None:
+                print("...Saving {}-bin cut-off histogram for {}...".format(num_bins, var))
                 out_file_path = os.path.join(out_dir, "input-distribution-{}-zoomed.png".format(var))
                 plt.savefig(out_file_path)
                 plt.close()
