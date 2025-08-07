@@ -32,7 +32,7 @@ default_adjustment_values = {
 }
 
 def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
-                 adjustment_type: str = None, adjustment_values: list = None):
+                 adjustment_type: str = None, spl_adj_val: float = None, sp2_adj_val: float = None, slo_adj_val: float = None):
     """
     Combined beaver dam capacity FIS
     :param network: Shapefile path containing necessary FIS inputs
@@ -40,7 +40,9 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     :param veg_type: Vegetation type suffix added to end of output ShapeFile fields
     :param max_drainage_area: Max drainage above which features are not processed.
     :param adjustment_type: Type of adjustment to apply ('shift', 'scale', or 'shape')
-    :param adjustment_values: List of values for adjustments (shifts or scaling factors)
+    :param spl_adj_val: Value to adjustment SPlow by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit)
+    :param sp2_adj_val: Value to adjustment SP2 by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit))
+    :param slo_adj_val: Value to adjustment Slope by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit)
     :return: None
     """
 
@@ -51,13 +53,17 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     if adjustment_type:
         if adjustment_type not in adjustment_types:
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
-        if not adjustment_values:
-            raise ValueError(f"Please provide adjustment values: list of [splow, sp2, slope] shift amounts, scale factors, or curve types.")
-        for val in adjustment_values:
+        if not spl_adj_val and not sp2_adj_val and not slo_adj_val:
+            log.warning("WARNING - no adjustment values provided for any of SPlow, SP2, or Slope. No adjustments will be applied.")
+        for val in [spl_adj_val, sp2_adj_val, slo_adj_val]:
             if adjustment_type == 'scale' and val <= 0:
                 raise ValueError(f"Invalid adjustment value scale factor: {val}. Must be greater than 0.")
             if adjustment_type == 'shape' and (val != 1.0 and val != 2.0):
                 raise ValueError(f"Invalid adjustment value curve type: {val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+        # convert Nones to default vals for this type
+        spl_adj_val = default_adjustment_values[adjustment_type] if spl_adj_val is None else spl_adj_val
+        sp2_adj_val = default_adjustment_values[adjustment_type] if sp2_adj_val is None else spl_adj_val
+        slo_adj_val = default_adjustment_values[adjustment_type] if slo_adj_val is None else slo_adj_val
 
         # output folder for fis images
         fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
@@ -72,7 +78,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         reaches = load_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, adjustment_values, fis_dir)
+                                          adjustment_type, spl_adj_val, sp2_adj_val, slo_adj_val, fis_dir)
         else:
             calculate_combined_fis(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_attributes(database, reaches, [capacity_field, dam_count_field], log)
@@ -80,7 +86,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         feature_values = load_dgo_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, adjustment_values, fis_dir)
+                                          adjustment_type, spl_adj_val, sp2_adj_val, slo_adj_val, fis_dir)
         else:
             calculate_combined_fis(feature_values, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_dgo_attributes(database, feature_values, [capacity_field, dam_count_field], log)
@@ -89,7 +95,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
 
 
 def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capacity_field: str, dam_count_field: str, max_drainage_area: float,
-                                  adj_type: str, adj_vals: list, fis_dir: str):
+                                  adj_type: str, spl_adj_val: float, sp2_adj_val: float, slo_adj_val: float, fis_dir: str):
     """
     Calculate dam capacity and density using combined FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -164,18 +170,18 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
 
     if adj_type == 'shift':
         # we shift all values by the specified constant except min and max bounds
-        c1 = adj_vals[0]
+        c1 = spl_adj_val
         splow['can'] = fuzz.trapmf(splow.universe, [0, 0, 150+c1, 175+c1])
         splow['probably'] = fuzz.trapmf(splow.universe, [150+c1, 175+c1, 180+c1, 190+c1])
         splow['cannot'] = fuzz.trapmf(splow.universe, [180+c1, 190+c1, 10000, 10000])
 
-        c2 = adj_vals[1]
+        c2 = sp2_adj_val
         sp2['persists'] = fuzz.trapmf(sp2.universe, [0, 0, 1000+c2, 1200+c2])
         sp2['breach'] = fuzz.trimf(sp2.universe, [1000+c2, 1200+c2, 1600+c2])
         sp2['oblowout'] = fuzz.trimf(sp2.universe, [1200+c2, 1600+c2, 2400+c2])
         sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600+c2, 2400+c2, 10000, 10000])
 
-        c3 = adj_vals[2]
+        c3 = slo_adj_val
         slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002, 0.005])      # do not shift tiny 'flat' MF
         slope['can'] = fuzz.trapmf(slope.universe, [0.0002, 0.005, 0.12+c3, 0.15+c3])   # treat as left edge
         slope['probably'] = fuzz.trapmf(slope.universe, [0.12+c3, 0.15+c3, 0.17+c3, 0.23+c3])
@@ -218,18 +224,18 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         for var, mfs in trapezoids.items():
             for category, abcd in mfs:
                 if var == 'splow':
-                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[0])
+                    a, b, c, d = calculate_trap_scale(abcd, spl_adj_val)
                     splow[category] = fuzz.trapmf(splow.universe, [a, b, c, d])
                 if var == 'sp2':
-                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[1])
+                    a, b, c, d = calculate_trap_scale(abcd, sp2_adj_val)
                     sp2[category] = fuzz.trapmf(sp2.universe, [a, b, c, d])
                 if var == 'slope':
-                    a, b, c, d = calculate_trap_scale(abcd, adj_vals[2])
+                    a, b, c, d = calculate_trap_scale(abcd, slo_adj_val)
                     slope[category] = fuzz.trapmf(slope.universe, [a, b, c, d])
         
         # scale triangles iteratively - only sp2 has tris
         for cat, abc in sp2_triangles.items():
-            scale = adj_vals[1]
+            scale = sp2_adj_val
             b = abc[1]
             a = b - ((b - abc[0]) * scale)
             c = b + ((abc[2] - b) * scale)
@@ -238,50 +244,50 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     elif adj_type == 'shape':
         
         # SPlow
-        if adj_vals[0] == 1.0:
+        if spl_adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes for SPLow.")
             splow['can'] = fuzz.pimf(splow.universe, -0.01, 0, 150, 175)
             splow['probably'] = fuzz.pimf(splow.universe, 150, 175, 180, 190)
             splow['cannot'] = fuzz.pimf(splow.universe, 180, 190, 10000, 10000.1)
-        elif adj_vals[0] == 2.0:
+        elif spl_adj_val == 2.0:
             log.info("Running 'loose fit' custom MF shapes for SPLow.")
             splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
             splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
             splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
         else:
-            raise ValueError(f"Invalid adjustment value curve type: {adj_vals[0]}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+            raise ValueError(f"Invalid adjustment value curve type: {spl_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
 
         # SP2
-        if adj_vals[1] == 1.0:
+        if sp2_adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes for SP2.")
             sp2['persists'] = fuzz.pimf(sp2.universe, -0.01, 0, 1000, 1200)
             sp2['breach'] = fuzz.pimf(sp2.universe, 1000, 1200, 1200, 1600)
             sp2['oblowout'] = fuzz.pimf(sp2.universe, 1200, 1600, 1600, 2400)
             sp2['blowout'] = fuzz.pimf(sp2.universe, 1600, 2400, 10000, 10000.1)
-        elif adj_vals[1] == 2.0:
+        elif sp2_adj_val == 2.0:
             log.info("Running 'loose fit' custom MF shapes for SP2.")
             sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
             sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
             sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
             sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
         else:
-            raise ValueError(f"Invalid adjustment value curve type: {adj_vals[1]}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+            raise ValueError(f"Invalid adjustment value curve type: {sp2_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
 
         # Slope
-        if adj_vals[2] == 1.0:
+        if slo_adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes for Slope.")
             slope['flat'] = fuzz.pimf(slope.universe, -0.01, 0, 0.0002, 0.005)
             slope['can'] = fuzz.pimf(slope.universe, 0.0002, 0.005, 0.12, 0.15)
             slope['probably'] = fuzz.pimf(slope.universe, 0.12, 0.15, 0.17, 0.23)
             slope['cannot'] = fuzz.pimf(slope.universe, 0.17, 0.23, 1, 1.01)
-        elif adj_vals[2] == 2.0:
+        elif slo_adj_val == 2.0:
             log.info("Running 'loose fit' custom MF shapes for Slope.")
             slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
             slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
             slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165)
             slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585)
         else:
-            raise ValueError(f"Invalid adjustment value curve type: {adj_vals[2]}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+            raise ValueError(f"Invalid adjustment value curve type: {slo_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
 
 
     # build fis rule table
