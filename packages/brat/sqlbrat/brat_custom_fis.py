@@ -107,7 +107,7 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
          flow_areas: Path, waterbodies: Path, max_waterbody: float, valley_bottom: Path,
          meta: Dict[str, str],
          veg_adj_type: str, veg_adj_val: float,
-         comb_adj_type: str, comb_adj_vals: List[float],
+         comb_adj_type: str, comb_spl_adj_val: float, comb_sp2_adj_val: float, comb_slo_adj_val: float
          ):
     """Build a BRAT project by segmenting a reach network and copying
     all the necessary layers into the resultant BRAT project
@@ -139,7 +139,9 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
         # VEG TYPE: 'scale' or 'shape' or None
         # VEG VALUE: float or None
         # COMB TYPE: 'shift', 'scale', 'shape', or None
-        # COMB VALUE: list of floats or Nones, for MFs: [splow, sp2, slope]
+        # COMB SPL VALUE: floats or None, for SPlow MFs
+        # COMB SP2 VALUE: floats or None, for SP2 MFs
+        # COMB SLO VALUE: floats or None, for Slope MFs
         
         # SHIFT val: float representing the actual units to shift MF by (neg = left, pos = right)
         # SCALE val: float representing the scaling factor ((0,1) = compress, >1 = stretch)
@@ -157,7 +159,7 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
     log.info(f'Value = {veg_adj_val}')
     log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
     log.info(f'Type = {comb_adj_type}')
-    log.info(f'Values: SPlow = {comb_adj_vals[0]}, SP2 = {comb_adj_vals[1]}, Slope = {comb_adj_vals[2]}')
+    log.info(f'Values: SPlow = {comb_spl_adj_val}, SP2 = {comb_sp2_adj_val}, Slope = {comb_slo_adj_val}')
     
     if veg_adj_type is None and comb_adj_type is None:
         log.warning(f'NO FIS ADJUSTMENTS SPECIFIED. Running BRAT with Standard FIS...')
@@ -465,9 +467,6 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
     ''' ---------------------- FIS Sensitivity Analysis begins here: ---------------------- '''
-    # we have parameters veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
-    if comb_adj_vals == None:
-        comb_adj_vals = [None, None, None]  # ensure list format even if all None
     
     fis_dir_path = os.path.join(output_folder, "fis/")
     if os.path.exists(fis_dir_path):
@@ -490,7 +489,8 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
         vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, 
                               adjustment_type=veg_adj_type, adjustment_value=veg_adj_val)
         combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, 
-                            adjustment_type=comb_adj_type, adjustment_values=comb_adj_vals)
+                            adjustment_type=comb_adj_type, spl_adj_val=comb_spl_adj_val,
+                            sp2_adj_val=comb_sp2_adj_val, slo_adj_val=comb_slo_adj_val)
         ''' ----------------------               (end)               ----------------------'''
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
@@ -509,19 +509,17 @@ def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgo
         create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
         database.curs.execute(create_stmt)
         
-        # prepare data to log
-        comb_adj_types_log = [None, None, None]     # need types in list format for DB
-        for i in range(len(comb_adj_vals)):
-            if comb_adj_vals is None or comb_adj_vals[i] == default_adjustment_values[comb_adj_type]:
-                comb_adj_types_log[i] = None
-            else:
-                comb_adj_types_log[i] = comb_adj_type
+        # prepare data to log - we want NULLs if no change
+        comb_spl_adj_val = None if comb_spl_adj_val == default_adjustment_values[comb_adj_type] else comb_spl_adj_val
+        comb_sp2_adj_val = None if comb_sp2_adj_val == default_adjustment_values[comb_adj_type] else comb_sp2_adj_val
+        comb_slo_adj_val = None if comb_slo_adj_val == default_adjustment_values[comb_adj_type] else comb_slo_adj_val
+        
         adjustment_data = [
             ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_val],
             ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_val],
-            ["Combined FIS", "SPlow", comb_adj_types_log[0], comb_adj_vals[0]],
-            ["Combined FIS", "SP2", comb_adj_types_log[1], comb_adj_vals[1]],
-            ["Combined FIS", "Slope", comb_adj_types_log[2], comb_adj_vals[2]],
+            ["Combined FIS", "SPlow", comb_adj_type, comb_spl_adj_val],
+            ["Combined FIS", "SP2", comb_adj_type, comb_sp2_adj_val],
+            ["Combined FIS", "Slope", comb_adj_type, comb_slo_adj_val],
         ]
         # insert
         database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
@@ -681,7 +679,9 @@ def main():
     parser.add_argument('--veg_adj_type', help="(optional) Type of adjustment applied to the Vegetation FIS: 'scale' or 'shape'.", type=str, default=None)
     parser.add_argument('--veg_adj_val', help="(optional) Float value of Vegetation FIS adjustment: scale factor or (1.0 for 'best fit' shapes, 2.0 for 'loose fit' shapes).", type=float, default=None)
     parser.add_argument('--comb_adj_type', help="(optional) Type of adjustment applied to the Combined FIS: 'shift' or 'scale' or 'shape'.", type=str, default=None)
-    parser.add_argument('--comb_adj_vals', help="(optional) Comma delimited float values of Combined FIS adjustment in order: SPlow, SP2, Slope.", type=str, default=None)
+    parser.add_argument('--comb_spl_adj_val', help="(optional) Float value of Combined FIS SPlow (baseflow) MFs adjustment.", type=float, default=None)
+    parser.add_argument('--comb_sp2_adj_val', help="(optional) Float value of Combined FIS SP2 (peak flow) MFs adjustment.", type=float, default=None)
+    parser.add_argument('--comb_slo_adj_val', help="(optional) Float value of Combined FIS Slope MFs adjustment.", type=float, default=None)
     
 
     # Substitute patterns for environment varaibles
@@ -695,8 +695,9 @@ def main():
     veg_adj_type = args.veg_adj_type if args.veg_adj_type else None
     veg_adj_val = args.veg_adj_val if args.veg_adj_val else None
     comb_adj_type = args.comb_adj_type if args.comb_adj_type else None
-    comb_adj_vals = args.comb_adj_vals.split(',') if args.comb_adj_vals else None
-    comb_adj_vals = [float(val) for val in comb_adj_vals]   # cast each to float
+    comb_spl_adj_val = args.comb_spl_adj_val if args.comb_spl_adj_val else None
+    comb_sp2_adj_val = args.comb_sp2_adj_val if args.comb_sp2_adj_val else None
+    comb_slo_adj_val = args.comb_slo_adj_val if args.comb_slo_adj_val else None
 
 
     # Initiate the log file
@@ -719,7 +720,8 @@ def main():
                                          args.flow_areas, args.waterbodies, args.max_waterbody,
                                          args.valley_bottom,
                                          meta,
-                                         veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
+                                         veg_adj_type, veg_adj_val,
+                                         comb_adj_type, comb_spl_adj_val, comb_sp2_adj_val, comb_slo_adj_val
                                          )
             log.debug('Return code: {}, [Max process usage] {}'.format(retcode, max_obj))
         else:
@@ -732,7 +734,8 @@ def main():
                 args.flow_areas, args.waterbodies, args.max_waterbody,
                 args.valley_bottom,
                 meta,
-                veg_adj_type, veg_adj_val, comb_adj_type, comb_adj_vals
+                veg_adj_type, veg_adj_val,
+                comb_adj_type, comb_spl_adj_val, comb_sp2_adj_val, comb_slo_adj_val
             )
 
     except Exception as ex:
