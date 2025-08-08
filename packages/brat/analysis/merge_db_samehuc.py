@@ -178,24 +178,19 @@ with sqlite3.connect(new_db_path) as conn:
                 stdev = None
             results["St_Dev"].append(stdev)
 
-            # compute category % stats for this col
-            for src_var in columns_to_copy_each:
-                if src_var in col:
-                    col_var = src_var
-                    break
-
             # Now calculate % of each capacity categories — currently only if oCC column
             # Code adapted from Riverscapes' brat_report.py
             # % of reaches in category = total length of reaches with oCC_EX in bounds / total length of all reaches
             if 'oCC_EX' in col:
                 # Find corresponding source db so we can pull data from there
-                col_label = col.split("_")[-1]
+                col_label = col[len('oCC_EX_'):]  # extract label after 'oCC_EX_'
                 for path, label in source_dbs.items():
                     if label == col_label:
                         db_path = path
                         break
                 src_conn = sqlite3.connect(db_path)
                 src_cur = src_conn.cursor()
+                print(f"Connected to {col} source DB: {db_path}")
                 
                 for cat_dict in cap_cutoffs:
                     label = cat_dict['label']
