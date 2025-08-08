@@ -32,7 +32,7 @@ source_table = 'CombinedOutputs'  # TABLE NAME in the source database
 
 # Parallel lists
 inputs = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPlow', 'iHyd_SP2', 'iGeo_Slope',]
-x_maxes = [(0, 4), (0, 4), (0, 75), (0, 2000), (0, 1.0)]
+x_maxes = [(0, 4), (0, 4), (0, 30), (0, 1500), (0, 0.8)]
 filter_quantiles = [1.0, 1.0, 0.995, 0.95, 0.995]  # quantiles for filtering outliers. set to 1.0 to disable filtering
 
 # Distributions to try fitting (scipy.stats distributions)
