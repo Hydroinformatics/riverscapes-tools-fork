@@ -29,7 +29,6 @@ adjustment_types = ['scale', 'shape']
 default_adjustment_values = {
     'shift': 0.0,       # no shift
     'scale': 1.0,       # no scaling
-    'shape': 0.0        # indicates original shapes should be used
 }
 
 
@@ -70,7 +69,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         feature_values = load_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
             calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
-                                            adjustment_type, adjustment_value, fis_dir)
+                                            adjustment_type, adjustment_value, adjustment_type, adjustment_value, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_attributes(database, feature_values, [out_field])
@@ -78,7 +77,7 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
         feature_values = load_dgo_attributes(database, [streamside_field, riparian_field], '({} IS NOT NULL) AND ({} IS NOT NULL)'.format(streamside_field, riparian_field))
         if adjustment_type:
             calculate_vegetation_fis_custom(feature_values, streamside_field, riparian_field, out_field,
-                                            adjustment_type, adjustment_value, fis_dir)
+                                            adjustment_type, adjustment_value, adjustment_type, adjustment_value, fis_dir)
         else:
             calculate_vegegtation_fis(feature_values, streamside_field, riparian_field, out_field)
         write_db_dgo_attributes(database, feature_values, [out_field])
@@ -89,7 +88,9 @@ def vegetation_fis_custom(database: str, label: str, veg_type: str, dgo: bool = 
 
 # custom Veg FIS function that allows for sensitivity analysis adjustments
 def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str, riparian_field: str, out_field: str,
-                                    adj_type: str, adj_val: float, fis_dir: str):
+                                    rip_adj_type: str, rip_adj_val: float,
+                                    str_adj_type: str, str_adj_val: float,
+                                    fis_dir: str = None):
     """
     Adjustable beaver dam capacity vegetation FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -134,7 +135,17 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     density['frequent'] = fuzz.trapmf(density.universe, [4, 8, 12, 25])
     density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
 
-    if adj_type == 'scale':
+    # Standard MFs reference values
+    a0, b0, c0, d0 = 0, 0, 0.1, 1   # from standard MFs
+    tri_centers = {     # from standard MFs
+        'barely': [0.1, 1, 2],
+        'moderately': [1, 2, 3], 
+        'suitable': [2, 3, 4],
+        'preferred': [3, 4, 4]
+    }
+
+    # Riparian
+    if rip_adj_type == 'scale':
         # scaling equations:
         #   triangles (a,b,c)
         #       a = b - ((b - a) * scalefactor)
@@ -145,37 +156,57 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         #       d = c + ((d-c) * scalefactor)
         
         # scale trapezoids
-        a0, b0, c0, d0 = 0, 0, 0.1, 1   # from standard MFs
-        a1 = b0 - ((b0 - a0) * adj_val)
-        d1 = c0 + ((d0 - c0) * adj_val)     # we do not change top (b or c)
+        a1 = b0 - ((b0 - a0) * rip_adj_val)
+        d1 = c0 + ((d0 - c0) * rip_adj_val)     # we do not change top (b or c)
         riparian['unsuitable'] = fuzz.trapmf(riparian.universe, [a1, b0, c0, d1])
-        streamside['unsuitable'] = fuzz.trapmf(streamside.universe, [a1, b0, c0, d1])
         
         # scale triangles iteratively
-        tri_centers = {     # from standard MFs
-            'barely': [0.1, 1, 2],
-            'moderately': [1, 2, 3], 
-            'suitable': [2, 3, 4],
-            'preferred': [3, 4, 4]
-        }
         for cat, abc in tri_centers.items():
             b = abc[1]      # we do not change the top of the triangle since we don't want to shift
-            a = b - ((b - abc[0]) * adj_val)
-            c = b + ((abc[2] - b) * adj_val)
+            a = b - ((b - abc[0]) * rip_adj_val)
+            c = b + ((abc[2] - b) * rip_adj_val)
             riparian[cat] = fuzz.trimf(riparian.universe, [a, b, c])
-            streamside[cat] = fuzz.trimf(streamside.universe, [a, b, c])  # MFs are identical
 
-    elif adj_type == 'shape':
+    elif rip_adj_type == 'shape':
         
         # 'best fit' curves
-        if adj_val == 1.0:
+        if rip_adj_val == 1.0:
             log.info("Running 'best fit' custom MF shapes.")
             riparian['unsuitable'] = fuzz.pimf(riparian.universe, -0.01, 0, 0.1, 1) # need to cover 0 input
             riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
             riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
             riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
             riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
+        
+        # 'loose fit' curves
+        elif rip_adj_val == 2.0:
+            log.info("Running 'loose fit' custom MF shapes.")
+            riparian['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
+            riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
+            riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
+            riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
+            riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
+    
 
+    # Streamside
+    if str_adj_type == 'scale':
+        
+        # scale trapezoids
+        a1 = b0 - ((b0 - a0) * str_adj_val)
+        d1 = c0 + ((d0 - c0) * str_adj_val)     # we do not change top (b or c)
+        streamside['unsuitable'] = fuzz.trapmf(streamside.universe, [a1, b0, c0, d1])
+        
+        # scale triangles iteratively
+        for cat, abc in tri_centers.items():
+            b = abc[1]      # we do not change the top of the triangle since we don't want to shift
+            a = b - ((b - abc[0]) * str_adj_val)
+            c = b + ((abc[2] - b) * str_adj_val)
+            streamside[cat] = fuzz.trimf(streamside.universe, [a, b, c])
+
+    elif str_adj_type == 'shape':
+        
+        # 'best fit' curves
+        if str_adj_val == 1.0:
             streamside['unsuitable'] = fuzz.pimf(riparian.universe, -0.01, 0, 0.1, 1) # need to cover 0 input
             streamside['barely'] = fuzz.gaussmf(streamside.universe, 1, .4)
             streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
@@ -183,14 +214,7 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
             streamside['preferred'] = fuzz.gaussmf(streamside.universe, 4, .4)
         
         # 'loose fit' curves
-        elif adj_val == 2.0:
-            log.info("Running 'loose fit' custom MF shapes.")
-            riparian['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
-            riparian['barely'] = fuzz.gaussmf(riparian.universe, 1, .4)
-            riparian['moderately'] = fuzz.gaussmf(riparian.universe, 2, .4)
-            riparian['suitable'] = fuzz.gaussmf(riparian.universe, 3, .4)
-            riparian['preferred'] = fuzz.gaussmf(riparian.universe, 4, .4)
-
+        elif str_adj_val == 2.0:
             streamside['unsuitable'] = fuzz.gbellmf(riparian.universe, 0.4, 2, 0.1)
             streamside['barely'] = fuzz.gaussmf(streamside.universe, 1, .4)
             streamside['moderately'] = fuzz.gaussmf(streamside.universe, 2, .4)
@@ -274,8 +298,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.ylabel('Membership')
     plt.legend(loc='upper right')
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-veg-riparian.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-veg-riparian.png")
+        plt.savefig(out_file_path)
     plt.close()
 
     # Streamside
@@ -285,8 +310,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.ylabel('Membership')
     plt.legend(loc='upper right')
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-veg-streamside.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-veg-streamside.png")
+        plt.savefig(out_file_path)
     plt.close()
 
     # Density - should remain unchanged
@@ -299,8 +325,9 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     plt.legend(title='Capacity:')
     plt.xlim(0, 40)
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-veg-density.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-veg-density.png")
+        plt.savefig(out_file_path)
     plt.close()
     '''
 
