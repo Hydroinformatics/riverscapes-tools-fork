@@ -13,26 +13,58 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import scipy.stats
+import sqlite3
 
 
-size = 30000
-x = np.arange(size)
-y = scipy.int_(np.round_(scipy.stats.vonmises.rvs(5,size=size)*47))
-h = plt.hist(y, bins=range(48))
+# --- CONFIGURATION ---
 
-dist_names = ['norm', 'expon']
+# Path to data from which to derive the distribution (e.g. brat-all-siletz-custom.db)
+source_db = ''
+source_table = 'CombinedOutputs'  # TABLE NAME in the source database
 
-for dist_name in dist_names:
-    dist = getattr(scipy.stats, dist_name)
-    params = dist.fit(y)
-    arg = params[:-2]
-    loc = params[-2]
-    scale = params[-1]
-    if arg:
-        pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale) * size
-    else:
-        pdf_fitted = dist.pdf(x, loc=loc, scale=scale) * size
-    plt.plot(pdf_fitted, label=dist_name)
-    plt.xlim(0,47)
-plt.legend(loc='upper right')
-plt.show()
+inputs = [
+    'iVeg_30EX',
+    'iVeg100EX',
+    'iHyd_SPlow',
+    'iHyd_SP2',
+    'iGeo_Slope'
+]
+
+dist_names = ['norm', 'expon']  # try these to fit
+
+
+def fit_inputs():
+    """Fit the distributions for all inputs in the source database"""
+    for input in inputs:
+        fit_distribution(input)
+
+
+def fit_distribution(input):
+
+    # Load the data from the input source
+    with sqlite3.connect(source_db) as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT {input} FROM {source_table} WHERE {input} IS NOT NULL")
+        y = [row[0] for row in cur.fetchall()]
+        x = range(len(y))
+        size = len(y)
+
+    # Plot the histogram
+    h = plt.hist(y, bins=50)
+
+    for dist_name in dist_names:
+        dist = getattr(scipy.stats, dist_name)
+        params = dist.fit(y)
+        arg = params[:-2]
+        loc = params[-2]
+        scale = params[-1]
+        if arg:
+            pdf_fitted = dist.pdf(x, *arg, loc=loc, scale=scale) * size
+        else:
+            pdf_fitted = dist.pdf(x, loc=loc, scale=scale) * size
+        plt.plot(pdf_fitted, label=dist_name)
+        plt.xlim(0,47)
+    plt.legend(loc='upper right')
+    plt.show()
+
+    # return []
