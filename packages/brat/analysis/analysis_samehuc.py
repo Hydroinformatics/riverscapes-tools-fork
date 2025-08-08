@@ -13,8 +13,8 @@ July 2025
 # For each individual FIS run,
 #  - visualize the MFs that were changed
 #  - view Veg FIS control surface in 3d (see code backbone below)
-#  - compare each reach output to standard: % changed; diff averages; 
-# Comparing all FIS runs vs. Standard,
+#  - compare each reach output to ST: % changed; diff averages; 
+# Comparing all FIS runs vs. ST,
 #  - generate bar chart of means; add on st.dev. error bars?
 #  - generate stacked (categories) bar chart comparing capacity outputs
 # INSERT all analysis data into another table in fis-all.db
@@ -27,6 +27,7 @@ import os
 import sys
 import argparse
 import traceback
+import re
 import sqlite3
 import matplotlib.pyplot as plt
 import seaborn as sns       # may need to run $ conda install seaborn
@@ -48,11 +49,62 @@ def analyze(database, out_dir):
 
     # capacity_means_box_whisker(database, out_dir)
     # capacity_categories_stacked_bar(database, out_dir)
+    # capacity_means_line(database, out_dir)        # NOT MADE
     # capacity_by_adjustment_pointplot(database, out_dir)
-    # capacity_by_adjustment_reg(database, out_dir)
+    capacity_by_adjustment_scatter(database, out_dir)
 
 
     print("Analysis complete.")
+
+
+# Dictionary to convert SQLite DB labels to more readable graph labels
+graph_labels = {
+    'oCC_EX_Standard': 'ST',
+    'oCC_EX_VEGx0_75': 'VEGx0.75',
+    'oCC_EX_VEGx1_5': 'VEGx1.5',
+    'oCC_EX_HYDx0_75': 'HYDx0.75',
+    'oCC_EX_HYDx1_5': 'HYDx1.5',
+    'oCC_EX_BOTHx0_75': 'BOTHx0.75',
+    'oCC_EX_BOTHx1_5': 'BOTHx1.5',
+    'oCC_EX_VEGcv1': 'VEGcv1',
+    'oCC_EX_HYDcv1': 'HYDcv1',
+    'oCC_EX_BOTHcv1': 'BOTHcv1',
+    'oCC_EX_VEGcv2': 'VEGcv2',
+    'oCC_EX_HYDcv2': 'HYDcv2',
+    'oCC_EX_BOTHcv2': 'BOTHcv2',
+    'oCC_EX_SLO_L1': 'SLO-1',
+    'oCC_EX_SLO_L1_35': 'SLO-1.35',
+    'oCC_EX_SLO_R1': 'SLO+1',
+    'oCC_EX_SLO_R1_35': 'SLO+1.35',
+    'oCC_EX_SPL_L10': 'SPL-10',
+    'oCC_EX_SPL_L16_25': 'SPL-16.25',
+    'oCC_EX_SPL_R10': 'SPL+10',
+    'oCC_EX_SPL_R16_25': 'SPL+16.25',
+    'oCC_EX_SP2_L50': 'SP2-50',
+    'oCC_EX_SP2_L110': 'SP2-110',
+    'oCC_EX_SP2_R50': 'SP2+50',
+    'oCC_EX_SP2_R110': 'SP2+110'
+}
+
+# Dictionary to map adjustment types to their possible labels
+adj_types_and_labels = {   # type of adj: {Inputs affected: [db_labels]}
+    # does NOT include ST - must be inserted at desired position
+    "Shift": {
+        "SPlow": ["oCC_EX_SPL_L16_25", "oCC_EX_SPL_L10", "oCC_EX_SPL_R10", "oCC_EX_SPL_R16_25"],
+        "SP2": ["oCC_EX_SP2_L110", "oCC_EX_SP2_L50", "oCC_EX_SP2_R50", "oCC_EX_SP2_R110"],
+        "Slope": ["oCC_EX_SLO_L1_35", "oCC_EX_SLO_L1", "oCC_EX_SLO_R1", "oCC_EX_SLO_R1_35"]
+    },
+    "Scale": {
+        "Vegetation FIS": ["oCC_EX_VEGx0_75", "oCC_EX_VEGx1_5",],
+        "Combined FIS": ["oCC_EX_HYDx0_75", "oCC_EX_HYDx1_5"],
+        "Both FIS": ["oCC_EX_BOTHx0_75", "oCC_EX_BOTHx1_5"]
+    },
+    "Shape": {
+        "Vegetation FIS": ["oCC_EX_VEGcv1", "oCC_EX_VEGcv2"],
+        "Combined FIS": ["oCC_EX_HYDcv1", "oCC_EX_HYDcv2"],
+        "Both FIS": ["oCC_EX_BOTHcv1", "oCC_EX_BOTHcv2"]
+    }
+}
 
 
 def capacity_means_box_whisker(database, out_dir):
@@ -70,7 +122,7 @@ def capacity_means_box_whisker(database, out_dir):
         cur.execute("SELECT Label FROM Stats")         # assuming Stats table exists
         all_labels = [row[0] for row in cur.fetchall()]       # convert to list
         oCC_labels = [label for label in all_labels if 'oCC_EX' in label]   # includes ST
-        short_labels = [label.replace("oCC_EX_", "") for label in oCC_labels]
+        short_labels = [graph_labels[label] for label in oCC_labels]
         print(f"Found {len(oCC_labels)} sources of oCC_EX data.")
 
         cur.execute(f"SELECT {', '.join(oCC_labels)} FROM CombinedOutputs")
@@ -80,12 +132,13 @@ def capacity_means_box_whisker(database, out_dir):
     
     # now construct the plot
     ax = sns.boxplot(data, whis=(0,100))
-    ax.set_ylabel("Overall Dam Capacity (dams/km)")
-    ax.set_title("Distribution of BRAT Capacity Outputs Across FIS Adjustments")
+    plt.xticks(rotation=45)
+    plt.ylabel("Mean Overall Dam Capacity (dams/km)")
+    plt.title("BRAT Capacity Outputs Under Different FIS Adjustments")
 
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, "fis-oCC_EX-box.png")
+        out_file_path = os.path.join(out_dir, "fis-capacity-box.png")
         plt.savefig(out_file_path)
         plt.close()
     else:
@@ -105,7 +158,7 @@ def capacity_categories_stacked_bar(database, out_dir):        # currently only 
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
     
-    cat_colors = {      # from brat_report.py
+    brat_colors = {      # from brat_report.py -- was using but not very aesthetic
         categories[0]: '#f50000',
         categories[1]: '#ffaa00',
         categories[2]: '#f5f500',
@@ -113,11 +166,15 @@ def capacity_categories_stacked_bar(database, out_dir):        # currently only 
         categories[4]: '#005ce6',
     }
 
+    palette = sns.color_palette("deep", n_colors=len(categories))
+    custom_palette = [palette[3], palette[1], palette[2], palette[0], palette[4]]
+    cat_colors = dict(zip(categories, custom_palette))
+
     stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
 
     # to store data for stacked bar chart
-    x_data = []
-    y_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
+    y_labels = []
+    perc_data = {cat: [] for cat in categories}    # list is % vals for each huc, in given category
 
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
@@ -126,92 +183,143 @@ def capacity_categories_stacked_bar(database, out_dir):        # currently only 
         cur.execute("SELECT Label FROM Stats")         # assuming Stats table exists
         all_labels = [row[0] for row in cur.fetchall()]       # convert to list
         oCC_labels = [l for l in all_labels if 'oCC_EX' in l]
+        short_labels = [graph_labels[label] for label in oCC_labels]
         print(f"Found {len(oCC_labels)} sources of oCC_EX data.")
 
-        for label in oCC_labels:
-            print(f"Processing {label}...")
-            x_data.append(label.replace("oCC_EX_", ""))
+        for i in range(len(oCC_labels)):
+            print(f"Processing {oCC_labels[i]}...")
+            y_labels.append(short_labels[i])
 
             # Select the % values for each category for this HUC
-            cur.execute(f"SELECT Label, {', '.join(stat_cols)} FROM Stats WHERE Label LIKE '%{label}%'")
-            cap_data = cur.fetchone()[1:]
-            print(f"For {label}, selected percents = {cap_data}")
-            
-            # store data
-            for i in range(len(categories)):
-                y_data[categories[i]].append(cap_data[i])
-    
-    # now construct bar chart
-    fig, ax = plt.subplots()
-    bottom = np.zeros(len(x_data))
+            cur.execute(f"SELECT Label, {', '.join(stat_cols)} FROM Stats WHERE Label LIKE '%{oCC_labels[i]}%'")
+            cap_data = cur.fetchone()[1:]   # don't store Label
+            print(f"For {oCC_labels[i]}, selected percents = {cap_data}")
 
-    for cat in categories:      # build one layer at a time
-        p = ax.bar(x_data, y_data[cat], 0.7, label=cat, color=cat_colors[cat], bottom=bottom)
-        bottom += y_data[cat]
-        ax.bar_label(p, label_type='center')
+            for i in range(len(categories)):
+                perc_data[categories[i]].append(cap_data[i])
     
+    # Construct master bar chart
+    sns.set_theme()
+    fig, ax = plt.subplots()
+    y_pos = np.arange(len(y_labels))
+    bottom = np.zeros(len(y_labels))
+
+    for cat in categories:      # build one category layer at a time
+        vals = perc_data[cat]
+        p = ax.barh(y_pos, vals, label=f"% {cat}", color=cat_colors[cat], left=bottom)
+        bottom += vals
+        # ax.bar_label(p, label_type='center')
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(y_labels)
+    ax.invert_yaxis()
     ax.set_ylabel("Percent of Watershed in a Category")
     ax.set_title("Existing Capacity Percentages for Different FIS Adjustments")
     ax.legend(loc='upper left', bbox_to_anchor=(1,1))
-    plt.tight_layout()
+    plt.xticks(rotation=45)
+    # plt.tight_layout()
     
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, "fis-oCC_EX-stacked-bar.png")
+        out_file_path = os.path.join(out_dir, "fis-categories-stackedbar.png")
         plt.savefig(out_file_path)
         plt.close()
     else:
         plt.show()
+    
+    # Also create an individual stacked bar chart for each category of adjustment
+    for adj_type in adj_types_and_labels.keys():
+
+        perc_data = {cat: [] for cat in categories}
+        with sqlite3.connect(database) as conn:
+            cur = conn.cursor()
+
+            # Flatten all labels for this type
+            all_labels = ['oCC_EX_Standard']  # always include ST
+            for subcat_labels in adj_types_and_labels[adj_type].values():
+                all_labels.extend(subcat_labels)
+            short_labels = [graph_labels[label] for label in all_labels]
+
+            for label in all_labels:
+                cur.execute(f"SELECT {', '.join(stat_cols)} FROM Stats WHERE Label = ?", (label,))
+                cap_data = cur.fetchone()
+                if cap_data is not None:
+                    for i, cat in enumerate(categories):
+                        perc_data[cat].append(cap_data[i])
+                else:
+                    for cat in categories:
+                        perc_data[cat].append(0)
+
+        # Plot
+        fig, ax = plt.subplots()
+        y_pos = np.arange(len(short_labels))
+        bottom = np.zeros(len(short_labels))
+        for cat in categories:
+            vals = perc_data[cat]
+            p = ax.barh(y_pos, vals, label=f"% {cat}", color=cat_colors[cat], left=bottom)
+            bottom += vals
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(short_labels)
+        ax.invert_yaxis()
+        ax.set_ylabel("Adjustment")
+        ax.set_xlabel("Percent of Watershed in a Category")
+        ax.set_title(f"Capacity Categories for FIS {adj_type} Adjustments")
+        ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+        plt.tight_layout()
+        if out_dir is not None:
+            fname = f"fis-categories-stackedbar-{adj_type}.png"
+            out_file_path = os.path.join(out_dir, fname)
+            plt.savefig(out_file_path)
+            plt.close()
+        else:
+            plt.show()
+
 
 
 def capacity_by_adjustment_pointplot(database, out_dir):
     """
-    Generate individual point plots of oCC_EX for each type of Adjustment, from the FIS runs in the database
+    Generate individual point plots of oCC_EX for Scale and Shape adjustments, from the FIS runs in the database
     :param database: path to multi-huc combined BRAT database (with oCC_EX)
     :param out_dir: optional path to a folder to save plots to
     """
-
-    # useful dictionaries
-    adj_labels = {   # type of adj: [possible labels]
-        "Shift SPlow": ["LEspl", "Standard", "RTspl"],
-        "Shift SP2": ["LEsp2", "Standard", "RTsp2"],
-        "Shift Slope": ["LEslo", "Standard", "RTslo"],
-        "Scale Vegetation FIS": ["CPveg", "Standard", "STveg"],
-        "Scale Hydro FIS": ["CPcomb", "Standard", "STcomb"],
-        "Scale Both FIS": ["CPboth", "Standard", "STboth"],
-        "Shape Vegetation FIS": ["Standard", "CVveg"],
-        "Shape Hydro FIS": ["Standard", "CVcomb"],
-        "Shape Both FIS": ["Standard", "CVboth"]
-    }
 
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
 
         # create a plot for each type of adjustment
-        for adj, labels in adj_labels.items():
-            cols = ', '.join([f"oCC_EX_{label}" for label in labels])
-            cur.execute(f"SELECT {cols} FROM CombinedOutputs")
-            results = cur.fetchall()
-            adj_data = pd.DataFrame(results, columns=labels)
-            print(adj_data)
+        for adj_type in ["Scale", "Shape"]:
+            for mfs, labels in adj_types_and_labels[adj_type].items():
+                print(f"Processing {adj_type} adjustment for {mfs}...")
+                cols = labels
+                if adj_type == "Scale":     # insert Standard run in the middle
+                    cols.insert(1, 'oCC_EX_Standard')
+                elif adj_type == "Shape":   # insert Standard run at the beginning
+                    cols.insert(0, 'oCC_EX_Standard')
+                short_labels = [graph_labels[label] for label in cols]
 
-            sns.pointplot(adj_data, errorbar=None)
-            plt.ylabel("Mean Dam Capacity (dams/km)")
-            plt.ylim(5, 8)
-            plt.title(f"Change in Capacity Output - {adj}")
+                cols_stmt = ', '.join(labels)
+                cur.execute(f"SELECT {cols_stmt} FROM CombinedOutputs")
+                results = cur.fetchall()
+                adj_data = pd.DataFrame(results, columns=short_labels)
+                print(adj_data)
 
-            if out_dir is not None:
-                print(f"...Saving plot to output dir...")
-                out_file_path = os.path.join(out_dir, f"fis-{adj.replace(' ', '-')}-pointplot.png")
-                plt.savefig(out_file_path)
-                plt.close()
-            else:
-                plt.show()
+                sns.pointplot(data=adj_data)
+                plt.ylabel("Mean Dam Capacity (dams/km)")
+                plt.ylim(5, 8)
+                plt.title(f"Change in Capacity Output - {mfs} {adj_type}")
+
+                if out_dir is not None:
+                    print(f"...Saving plot to output dir...")
+                    out_file_path = os.path.join(out_dir, f"{adj_type}-{mfs.replace(' ', '-')}-pointplot.png")
+                    plt.savefig(out_file_path)
+                    plt.close()
+                else:
+                    plt.show()
 
 
-def capacity_by_adjustment_reg(database, out_dir):
+def capacity_by_adjustment_scatter(database, out_dir):
     """
-    Generate scatter plots of oCC_EX for each type of Adjustment, from the means of each adjustment in Stats
+    Generate scatter plots of oCC_EX for each Shift Adjustment, from the means in Stats
     :param database: path to multi-huc combined BRAT database (Stats table)
     :param out_dir: optional path to a folder to save plots to
     """
@@ -219,42 +327,47 @@ def capacity_by_adjustment_reg(database, out_dir):
     #                                      -------------- BROKEN --------------
     # TODO: change this so it actually works. will need to change adj_labels to new monte db structure
 
-    # useful dictionaries
-    adj_labels = {   # type of adj: [possible labels]
-        "Shift SPlow": ["LEspl", "Standard", "RTspl"],
-        "Shift SP2": ["LEsp2", "Standard", "RTsp2"],
-        "Shift Slope": ["LEslo", "Standard", "RTslo"],
-        "Scale Vegetation FIS": ["CPveg", "Standard", "STveg"],
-        "Scale Hydro FIS": ["CPcomb", "Standard", "STcomb"],
-        "Scale Both FIS": ["CPboth", "Standard", "STboth"],
-        "Shape Vegetation FIS": ["Standard", "CVveg"],
-        "Shape Hydro FIS": ["Standard", "CVcomb"],
-        "Shape Both FIS": ["Standard", "CVboth"]
-    }
 
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
 
-        # store capacity means
-        cur.execute(f"SELECT Label, Mean FROM Stats WHERE Label LIKE '%oCC_EX%'")
-        cap_data = cur.fetchall()   # list of (label, mean) tuples
-        print(cap_data)
+        for mfs, labels in adj_types_and_labels["Shift"].items():
+            print(f"Processing Shift adjustment for {mfs}...")
+            rows = labels
+            # insert Standard run in the middle
+            rows.insert(2, 'oCC_EX_Standard')
 
-        # create a subplot for each type of adjustment, as well as a master plot for all
-        for adj, labels in adj_labels.items():
-            adj_data = pd.DataFrame(columns=labels)
-            for label in labels:
-                adj_data.loc[label] = [row[1] for row in cap_data if label in row[0]]
-            print(adj_data)
+            placeholders = ','.join(['?'] * len(rows))
+            stmt = f"SELECT Label, Mean FROM Stats WHERE Label IN ({placeholders})"
+            cur.execute(stmt, rows)
+            result = cur.fetchall()   # list of (label, mean) tuples
+            # process result
+            label_to_mean = {row[0]: row[1] for row in result}
+            ordered_means = [label_to_mean.get(label, None) for label in rows]
+            ordered_labels = [graph_labels[label] for label in rows if label in graph_labels]
+            # extract float shift value from labels
+            x_vals = []
+            for label in ordered_labels:
+                match = re.search(r'([+-]\d+(\.\d+)?)$', label)
+                if match:
+                    x_vals.append(float(match.group(1)))
+                else:
+                    x_vals.append(0.0)
 
-            # individual plot
-            sns.regplot(data=adj_data, ci=None)
-            plt.ylim(5, 8)
+            # Create a DataFrame for plotting
+            data = pd.DataFrame({
+                'Shift': x_vals,
+                'Mean': ordered_means
+            })
+
+            # plot
+            sns.lineplot(data=data, x='Shift', y='Mean', marker='o')
+            plt.ylim(5.6, 6.25)
             plt.ylabel("Mean Dam Capacity (dams/km)")
-            plt.title(f"BRAT Outputs under {adj}")
+            plt.title(f"Change in Capacity Output - {mfs} Shift Adjustment")
             if out_dir is not None:
                 print(f"...Saving plot to output dir...")
-                out_file_path = os.path.join(out_dir, f"fis-{adj.replace(' ', '-')}-scatter.png")
+                out_file_path = os.path.join(out_dir, f"Shift-{mfs.replace(' ', '-')}-reg.png")
                 plt.savefig(out_file_path)
                 plt.close()
             else:
