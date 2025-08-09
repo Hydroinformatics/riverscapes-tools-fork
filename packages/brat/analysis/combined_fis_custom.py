@@ -25,10 +25,10 @@ from rscommons import ProgressBar, Logger, dotenv
 
 
 adjustment_types = ['shift', 'scale', 'shape']
-default_adjustment_values = {
+default_adj_vals = {
     'shift': 0.0,       # no shift
     'scale': 1.0,       # no scaling
-    'shape': 0.0        # indicates original shapes should be used
+    'shape': 0.0        # anything besides 1.0 or 2.0
 }
 
 def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_area: float, dgo: bool = False, 
@@ -40,7 +40,7 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
     :param veg_type: Vegetation type suffix added to end of output ShapeFile fields
     :param max_drainage_area: Max drainage above which features are not processed.
     :param adjustment_type: Type of adjustment to apply ('shift', 'scale', or 'shape')
-    :param spl_adj_val: Value to adjustment SPlow by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit)
+    :param spl_adj_val: Value to adjustment SPlow by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit))
     :param sp2_adj_val: Value to adjustment SP2 by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit))
     :param slo_adj_val: Value to adjustment Slope by (shift, scale factor, or curve type (1.0=best fit, 2.0=loose fit)
     :return: None
@@ -55,16 +55,29 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
             raise ValueError(f"Invalid adjustment type: {adjustment_type}. Must be one of {adjustment_types}.")
         if not spl_adj_val and not sp2_adj_val and not slo_adj_val:
             log.warning("WARNING - no adjustment values provided for any of SPlow, SP2, or Slope. No adjustments will be applied.")
+        # initialize parameters
+        spl_shift, spl_scale, spl_shape = sp2_shift, sp2_scale, sp2_shape = slo_shift, slo_scale, slo_shape = (
+            default_adj_vals['shift'], default_adj_vals['scale'], default_adj_vals['shape']
+        )
+        # set params as defined
+        if adjustment_type == 'shift':
+            spl_shift = spl_adj_val if spl_adj_val is not None else default_adj_vals['shift']
+            sp2_shift = sp2_adj_val if sp2_adj_val is not None else default_adj_vals['shift']
+            slo_shift = slo_adj_val if slo_adj_val is not None else default_adj_vals['shift']
+        if adjustment_type == 'scale':
+            spl_scale = spl_adj_val if spl_adj_val is not None else default_adj_vals['scale']
+            sp2_scale = sp2_adj_val if sp2_adj_val is not None else default_adj_vals['scale']
+            slo_scale = slo_adj_val if slo_adj_val is not None else default_adj_vals['scale']
+        if adjustment_type == 'shape':
+            spl_shape = spl_adj_val if spl_adj_val is not None else default_adj_vals['shape']
+            sp2_shape = sp2_adj_val if sp2_adj_val is not None else default_adj_vals['shape']
+            slo_shape = slo_adj_val if slo_adj_val is not None else default_adj_vals['shape']
+        # handle invalid values
         for val in [spl_adj_val, sp2_adj_val, slo_adj_val]:
+            if adjustment_type == 'shape' and val != 1.0 and val != 2.0 and val != -1.0:
+                raise ValueError(f"Invalid adjustment value curve type: {val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
             if adjustment_type == 'scale' and val <= 0:
                 raise ValueError(f"Invalid adjustment value scale factor: {val}. Must be greater than 0.")
-            if adjustment_type == 'shape' and (val != 1.0 and val != 2.0):
-                raise ValueError(f"Invalid adjustment value curve type: {val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
-        # convert Nones to default vals for this type
-        spl_adj_val = default_adjustment_values[adjustment_type] if spl_adj_val is None else spl_adj_val
-        sp2_adj_val = default_adjustment_values[adjustment_type] if sp2_adj_val is None else spl_adj_val
-        slo_adj_val = default_adjustment_values[adjustment_type] if slo_adj_val is None else slo_adj_val
-
         # output folder for fis images
         fis_dir = os.path.join(os.path.dirname(os.path.dirname(database)), 'fis/')
     
@@ -78,7 +91,9 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         reaches = load_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, spl_adj_val, sp2_adj_val, slo_adj_val, fis_dir)
+                                          spl_shift, spl_scale, spl_shape,
+                                          sp2_shift, sp2_scale, sp2_shape,
+                                          slo_shift, slo_scale, slo_shape, fis_dir)
         else:
             calculate_combined_fis(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_attributes(database, reaches, [capacity_field, dam_count_field], log)
@@ -86,7 +101,9 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
         feature_values = load_dgo_attributes(database, fields, ' AND '.join(['({} IS NOT NULL)'.format(f) for f in fields]))
         if adjustment_type:
             calculate_combined_fis_custom(reaches, veg_fis_field, capacity_field, dam_count_field, max_drainage_area,
-                                          adjustment_type, spl_adj_val, sp2_adj_val, slo_adj_val, fis_dir)
+                                          spl_shift, spl_scale, spl_shape,
+                                          sp2_shift, sp2_scale, sp2_shape,
+                                          slo_shift, slo_scale, slo_shape, fis_dir)
         else:
             calculate_combined_fis(feature_values, veg_fis_field, capacity_field, dam_count_field, max_drainage_area)
         write_db_dgo_attributes(database, feature_values, [capacity_field, dam_count_field], log)
@@ -95,7 +112,10 @@ def combined_fis_custom(database: str, label: str, veg_type: str, max_drainage_a
 
 
 def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capacity_field: str, dam_count_field: str, max_drainage_area: float,
-                                  adj_type: str, spl_adj_val: float, sp2_adj_val: float, slo_adj_val: float, fis_dir: str):
+                                  spl_shift: float, spl_scale: float, spl_shape: float,
+                                  sp2_shift: float, sp2_scale: float, sp2_shape: float,
+                                  slo_shift: float, slo_scale: float, slo_shape: float,
+                                  fis_dir: str):
     """
     Calculate dam capacity and density using combined FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -167,127 +187,135 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     density['occasional'] = fuzz.trapmf(density.universe, [0.5, 1.5, 4, 8])
     density['frequent'] = fuzz.trapmf(density.universe, [4, 8, 12, 25])
     density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
+        
+        
+    # -- SPlow Adjustments --
 
-    if adj_type == 'shift':
-        # we shift all values by the specified constant except min and max bounds
-        c1 = spl_adj_val
-        splow['can'] = fuzz.trapmf(splow.universe, [0, 0, 150+c1, 175+c1])
-        splow['probably'] = fuzz.trapmf(splow.universe, [150+c1, 175+c1, 180+c1, 190+c1])
-        splow['cannot'] = fuzz.trapmf(splow.universe, [180+c1, 190+c1, 10000, 10000])
-
-        c2 = sp2_adj_val
-        sp2['persists'] = fuzz.trapmf(sp2.universe, [0, 0, 1000+c2, 1200+c2])
-        sp2['breach'] = fuzz.trimf(sp2.universe, [1000+c2, 1200+c2, 1600+c2])
-        sp2['oblowout'] = fuzz.trimf(sp2.universe, [1200+c2, 1600+c2, 2400+c2])
-        sp2['blowout'] = fuzz.trapmf(sp2.universe, [1600+c2, 2400+c2, 10000, 10000])
-
-        c3 = slo_adj_val
-        slope['flat'] = fuzz.trapmf(slope.universe, [0, 0, 0.0002, 0.005])      # do not shift tiny 'flat' MF
-        slope['can'] = fuzz.trapmf(slope.universe, [0.0002, 0.005, 0.12+c3, 0.15+c3])   # treat as left edge
-        slope['probably'] = fuzz.trapmf(slope.universe, [0.12+c3, 0.15+c3, 0.17+c3, 0.23+c3])
-        slope['cannot'] = fuzz.trapmf(slope.universe, [0.17+c3, 0.23+c3, 1, 1])
+    # apply shift first. if default value of 0, there will be no change
+    c = spl_shift    
+    splow_trapezoids = {
+        'can': [0, 0, 150+c, 175+c],
+        'probably': [150+c, 175+c, 180+c, 190+c],
+        'cannot': [180+c, 190+c, 10000, 10000]
+    }
     
-    elif adj_type == 'scale':
-        # scaling equations:
-            #   triangles (a,b,c)
-            #       a = b - ((b - a) * scalefactor)
-            #       c = b + ((c - b) * scalefactor)
-            #       even though the triangle may not be isosceles, we use b to yield consistent MF intersection
-            #   trapezoids (a,b,c,d)
-            #       a = b - ((b-a) * scalefactor)
-            #       d = c + ((d-c) * scalefactor)
+    # now calculate scaled points. if default value of 1, there will be no change
+    pts = {}
+    for category, abcd in splow_trapezoids.items():
+        a, b, c, d = calculate_trap_scale(abcd, spl_scale)
+        pts[category] = [a, b, c, d]
+    
+    print(pts)
+    
+    # build MFs using shifted & scaled points, unless loose fit curves
+    if spl_shape == 1.0:
+        log.info("Running 'best fit' custom MF shapes for SPLow.")
+        splow['can'] = fuzz.pimf(splow.universe, -0.01, 0, pts['can'][2], pts['can'][3])
+        splow['probably'] = fuzz.pimf(splow.universe, *[pts['probably']])
+        splow['cannot'] = fuzz.pimf(splow.universe, pts['cannot'][0], pts['cannot'][1], 10000, 10000.1)
+    elif spl_shape == 2.0:
+        log.info("Running 'loose fit' custom MF shapes for SPLow.")
+        if sp2_scale != default_adj_vals['scale']:
+            log.warning("Warning: scaling is currently incompatible with loose fit shapes. No scaling applied.")
+        splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75+c)
+        splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170+c)
+        splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090+c)
+    else:
+        log.info("Using default SPLow membership functions.")
+        splow['can'] = fuzz.trapmf(splow.universe, [pts['can']])
+        splow['probably'] = fuzz.trapmf(splow.universe, [pts['probably']])
+        splow['cannot'] = fuzz.trapmf(splow.universe, [pts['cannot']])
         
-        trapezoids = {
-            'splow': [
-                ['can', [0, 0, 150, 175]],
-                ['probably', [150, 175, 180, 190]],
-                ['cannot', [180, 190, 10000, 10000]]
-            ],
-            'sp2': [
-                ['persists', [0, 0, 1000, 1200]],
-                ['blowout', [1600, 2400, 10000, 10000]]
-            ],
-            'slope': [
-                ['flat', [0, 0, 0.0002, 0.005]],
-                ['can', [0.0002, 0.005, 0.12, 0.15]],
-                ['probably', [0.12, 0.15, 0.17, 0.23]],
-                ['cannot', [0.17, 0.23, 1, 1]]
-            ]
-        }
-        
-        sp2_triangles = {   # only sp2 uses triangles
-            'breach': [1000, 1200, 1600],
-            'oblowout': [1200, 1600, 2400]
-        }
-        
-        # scale trapezoids iteratively
-        for var, mfs in trapezoids.items():
-            for category, abcd in mfs:
-                if var == 'splow':
-                    a, b, c, d = calculate_trap_scale(abcd, spl_adj_val)
-                    splow[category] = fuzz.trapmf(splow.universe, [a, b, c, d])
-                if var == 'sp2':
-                    a, b, c, d = calculate_trap_scale(abcd, sp2_adj_val)
-                    sp2[category] = fuzz.trapmf(sp2.universe, [a, b, c, d])
-                if var == 'slope':
-                    a, b, c, d = calculate_trap_scale(abcd, slo_adj_val)
-                    slope[category] = fuzz.trapmf(slope.universe, [a, b, c, d])
-        
-        # scale triangles iteratively - only sp2 has tris
-        for cat, abc in sp2_triangles.items():
-            scale = sp2_adj_val
-            b = abc[1]
-            a = b - ((b - abc[0]) * scale)
-            c = b + ((abc[2] - b) * scale)
-            sp2[cat] = fuzz.trimf(sp2.universe, [a, b, c])
-        
-    elif adj_type == 'shape':
-        
-        # SPlow
-        if spl_adj_val == 1.0:
-            log.info("Running 'best fit' custom MF shapes for SPLow.")
-            splow['can'] = fuzz.pimf(splow.universe, -0.01, 0, 150, 175)
-            splow['probably'] = fuzz.pimf(splow.universe, 150, 175, 180, 190)
-            splow['cannot'] = fuzz.pimf(splow.universe, 180, 190, 10000, 10000.1)
-        elif spl_adj_val == 2.0:
-            log.info("Running 'loose fit' custom MF shapes for SPLow.")
-            splow['can'] = fuzz.gbellmf(splow.universe, 85, 8, 75)
-            splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170)
-            splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090)
-        else:
-            raise ValueError(f"Invalid adjustment value curve type: {spl_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
 
-        # SP2
-        if sp2_adj_val == 1.0:
-            log.info("Running 'best fit' custom MF shapes for SP2.")
-            sp2['persists'] = fuzz.pimf(sp2.universe, -0.01, 0, 1000, 1200)
-            sp2['breach'] = fuzz.pimf(sp2.universe, 1000, 1200, 1200, 1600)
-            sp2['oblowout'] = fuzz.pimf(sp2.universe, 1200, 1600, 1600, 2400)
-            sp2['blowout'] = fuzz.pimf(sp2.universe, 1600, 2400, 10000, 10000.1)
-        elif sp2_adj_val == 2.0:
-            log.info("Running 'loose fit' custom MF shapes for SP2.")
-            sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500)
-            sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200, 150)
-            sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700, 250)
-            sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200)
-        else:
-            raise ValueError(f"Invalid adjustment value curve type: {sp2_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+    # -- SP2 Adjustments --
 
-        # Slope
-        if slo_adj_val == 1.0:
-            log.info("Running 'best fit' custom MF shapes for Slope.")
-            slope['flat'] = fuzz.pimf(slope.universe, -0.01, 0, 0.0002, 0.005)
-            slope['can'] = fuzz.pimf(slope.universe, 0.0002, 0.005, 0.12, 0.15)
-            slope['probably'] = fuzz.pimf(slope.universe, 0.12, 0.15, 0.17, 0.23)
-            slope['cannot'] = fuzz.pimf(slope.universe, 0.17, 0.23, 1, 1.01)
-        elif slo_adj_val == 2.0:
-            log.info("Running 'loose fit' custom MF shapes for Slope.")
-            slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025)
-            slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06)
-            slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165)
-            slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585)
-        else:
-            raise ValueError(f"Invalid adjustment value curve type: {slo_adj_val}. Must be either 1.0 (best fit) or 2.0 (loose fit).")
+    # apply shift first. if default value of 0, there will be no change
+    c = sp2_shift    
+    sp2_trapezoids = {
+        'persists': [0, 0, 1000+c, 1200+c],
+        'blowout': [1600+c, 2400+c, 10000, 10000]
+    }
+    sp2_triangles = {   # only sp2 uses triangles
+        'breach': [1000+c, 1200+c, 1600+c],
+        'oblowout': [1200+c, 1600+c, 2400+c]
+    }
+    
+    # now calculate scaled points. if default value of 1, there will be no change
+    pts = {}
+    for category, abcd in sp2_trapezoids.items():
+        a, b, c, d = calculate_trap_scale(abcd, sp2_scale)
+        pts[category] = [a, b, c, d]
+    for category, abc in sp2_triangles.items():
+        b = abc[1]
+        a = b - ((b - abc[0]) * sp2_scale)
+        c = b + ((abc[2] - b) * sp2_scale)
+        pts[category] = [a, b, c]
+    
+    print(pts)
+    
+    # build MFs using shifted & scaled points, unless loose fit curves
+    if sp2_shape == 1.0:
+        log.info("Running 'best fit' custom MF shapes for SP2.")
+        sp2['persists'] = fuzz.pimf(sp2.universe, -0.01, 0, pts['persists'][2], pts['persists'][3])
+        sp2['breach'] = fuzz.pimf(sp2.universe, *[pts['breach']])
+        sp2['oblowout'] = fuzz.pimf(sp2.universe, *[pts['oblowout']])
+        sp2['blowout'] = fuzz.pimf(sp2.universe, pts['blowout'][0], pts['blowout'][1], 10000, 10000.1)
+    elif sp2_shape == 2.0:
+        log.info("Running 'loose fit' custom MF shapes for SP2.")
+        if sp2_scale != default_adj_vals['scale']:
+            log.warning("Warning: scaling is currently incompatible with loose fit shapes. No scaling applied.")
+        sp2['persists'] = fuzz.gbellmf(sp2.universe, 500, 5, 500+c)
+        sp2['breach'] = fuzz.gaussmf(sp2.universe, 1200+c, 150)
+        sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700+c, 250)
+        sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200+c)
+    else:
+        log.info("Using default SP2 membership functions.")
+        sp2['persists'] = fuzz.trapmf(sp2.universe, [pts['persists']])
+        sp2['breach'] = fuzz.trimf(sp2.universe, [pts['breach']])
+        sp2['oblowout'] = fuzz.trimf(sp2.universe, [pts['oblowout']])
+        sp2['blowout'] = fuzz.trapmf(sp2.universe, [pts['blowout']])  
+
+
+    # -- Slope Adjustments --
+
+    # apply shift first. if default value of 0, there will be no change
+    c = slo_shift    
+    slope_trapezoids = {
+        'flat': [0, 0, 0.0002, 0.005],
+        'can': [0.0002, 0.005, 0.12+c, 0.15+c],
+        'probably': [0.12+c, 0.15+c, 0.17+c, 0.23+c],
+        'cannot': [0.17+c, 0.23+c, 1, 1]
+    }
+    
+    # now calculate scaled points. if default value of 1, there will be no change
+    pts = {}
+    for category, abcd in slope_trapezoids.items():
+        a, b, c, d = calculate_trap_scale(abcd, slo_scale)
+        pts[category] = [a, b, c, d]
+    
+    print(pts)
+    
+    # build MFs using shifted & scaled points, unless loose fit curves
+    if slo_shape == 1.0:
+        log.info("Running 'best fit' custom MF shapes for Slope.")
+        slope['flat'] = fuzz.pimf(slope.universe, -0.01, 0, 0.0002, 0.005)
+        slope['can'] = fuzz.pimf(slope.universe, 0.0002, 0.005, pts['can'][2], pts['can'][3])
+        slope['probably'] = fuzz.pimf(slope.universe, *pts['probably'])
+        slope['cannot'] = fuzz.pimf(slope.universe, pts['cannot'][0], pts['cannot'][1], 1, 1.01)
+    elif slo_shape == 2.0:
+        log.info("Running 'loose fit' custom MF shapes for Slope.")
+        if sp2_scale != default_adj_vals['scale']:
+            log.warning("Warning: scaling is currently incompatible with loose fit shapes. No scaling applied.")
+        slope['flat'] = fuzz.gbellmf(slope.universe, 0.0025, 3, 0.0025+c)
+        slope['can'] = fuzz.gbellmf(slope.universe, 0.07, 3, 0.06+c)
+        slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165+c)
+        slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585+c)
+    else:
+        log.info("Using default Slope membership functions.")
+        slope['flat'] = fuzz.trapmf(slope.universe, [pts['flat']])
+        slope['can'] = fuzz.trapmf(slope.universe, [pts['can']])
+        slope['probably'] = fuzz.trapmf(slope.universe, [pts['probably']])
+        slope['cannot'] = fuzz.trapmf(slope.universe, [pts['cannot']])
 
 
     # build fis rule table
@@ -433,8 +461,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend(title='Capacity:')
     plt.xlim(0, 40)
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-comb-ovc.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-comb-ovc.png")
+        plt.savefig(out_file_path)
     plt.close()
     '''
     # SPLow
@@ -445,8 +474,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(100, 250)
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-comb-SPlow.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-comb-SPlow.png")
+        plt.savefig(out_file_path)
     plt.close()
 
     # SP2
@@ -457,8 +487,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(500, 3000)
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-comb-SP2.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-comb-SP2.png")
+        plt.savefig(out_file_path)
     plt.close()
 
     # Slope
@@ -469,8 +500,9 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend()
     plt.xlim(0, 0.5)
     plt.tight_layout()
-    out_file_path = os.path.join(fis_dir, "fis-comb-slope.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(fis_dir, "fis-comb-slope.png")
+        plt.savefig(out_file_path)
     plt.close()
 
     # Density - should remain unchanged
@@ -483,14 +515,23 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.legend(title='Capacity')
     plt.xlim(0, 40)
     plt.tight_layout()
-    out_file_path = os.path.join(out_dir, "fis-comb-output-density.png")
-    plt.savefig(out_file_path)
+    if fis_dir:
+        out_file_path = os.path.join(out_dir, "fis-comb-output-density.png")
+        plt.savefig(out_file_path)
     plt.close()
     '''
     progbar.finish()
     log.info('Done')
 
 
+# scaling equations:
+        #   triangles (a,b,c)
+        #       a = b - ((b - a) * scalefactor)
+        #       c = b + ((c - b) * scalefactor)
+        #       even though the triangle may not be isosceles, we use b to yield consistent MF intersection
+        #   trapezoids (a,b,c,d)
+        #       a = b - ((b-a) * scalefactor)
+        #       d = c + ((d-c) * scalefactor)
 def calculate_trap_scale(abcd: list = None, scale_factor: float = 1.0):
     """
     Helper function to scale trapezoidal membership functions (MFs)
@@ -506,6 +547,7 @@ def calculate_trap_scale(abcd: list = None, scale_factor: float = 1.0):
     return [a, b, c, d]
 
 
+# the standard Combined FIS from sqlBRAT
 def calculate_combined_fis(feature_values: dict, veg_fis_field: str, capacity_field: str, dam_count_field: str, max_drainage_area: float):
     """
     Calculate dam capacity and density using combined FIS

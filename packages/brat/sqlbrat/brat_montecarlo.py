@@ -79,25 +79,27 @@ adjustment_dist = { # adjustment: (param1, param2) e.g. (mu, sigma)
 }
 
 adj_cols = [
-    "Veg30_Shift", "Veg30_Scale", "Veg100_Shift", "Veg100_Scale",
-    "SPlow_Shift", "SPlow_Scale", "SP2_Shift", "SP2_Scale", "Slope_Shift", "Slope_Scale"
+    "Veg30_Scale", "Veg100_Scale", "SPlow_Shift", "SPlow_Scale",
+    "SP2_Shift", "SP2_Scale", "Slope_Shift", "Slope_Scale"
 ]
 
 
 # Database functions
 def create_db(database: Path):
-    with SQLiteCon(database) as conn:
+    with sqlite3.connect(database) as conn:
         cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS Simulations(SimID PRIMARY KEY AUTOINCREMENT, Name, Start, End, N_samples)")
-        cur.execute(f"CREATE TABLE IF NOT EXISTS SimulationAdjustments(AdjID PRIMARY KEY AUTOINCREMENT, SimID FOREIGN KEY, {', '.join(adj_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute("PRAGMA foreign_keys = ON;")
+        
+        cur.execute("CREATE TABLE IF NOT EXISTS Simulations(SimID INTEGER PRIMARY KEY AUTOINCREMENT, Name, Start, End, N_samples)")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS SimulationAdjustments(AdjID INTEGER PRIMARY KEY AUTOINCREMENT, SimID INTEGER, {', '.join(adj_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
         cur.execute("CREATE TABLE IF NOT EXISTS InputDistributions(SimID, Var, Distribution, Param1, Param2, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), PRIMARY KEY (SimID, Var))")
-        cur.execute("CREATE TABLE IF NOT EXISTS Results(ReachID PRIMARY KEY, SimID, iVeg_30EX, iVeg100EX, iHyd_SPlow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (ReachID) REFERENCES Reaches(ReachID))")
-        cur.execute("CREATE TABLE IF NOT EXISTS Stats(SimID FOREIGN KEY, Mean_Veg30, Mean_Veg100, Mean_SPlow, Mean_SP2, Mean_Slope, Mean_oVC_EX, StDev_oVC_EX, Mean_oCC_EX, StDev_oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute("CREATE TABLE IF NOT EXISTS Results(ReachID INTEGER PRIMARY KEY, SimID, iVeg_30EX, iVeg100EX, iHyd_SPlow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (ReachID) REFERENCES Reaches(ReachID))")
+        cur.execute("CREATE TABLE IF NOT EXISTS Stats(SimID INTEGER, Mean_Veg30, Mean_Veg100, Mean_SPlow, Mean_SP2, Mean_Slope, Mean_oVC_EX, StDev_oVC_EX, Mean_oCC_EX, StDev_oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
 
 
 # Functions that generate values from distributions
 
-def generate_inputs(n_samples: int, uniform: bool) -> List[Dict[str, float]]:
+def generate_inputs(n_inputs: int, uniform: bool) -> List[Dict[str, float]]:
     """Generate synthetic inputs for the BRAT model based on the specified number of samples and distribution type.
     
     Args:
@@ -113,8 +115,8 @@ def generate_inputs(n_samples: int, uniform: bool) -> List[Dict[str, float]]:
     else:
         input_dists = input_dists_sampled
     
-    inputs = [{var: None for var in input_dists.keys()}] * n_samples
-    for i in range(n_samples):
+    inputs = [{var: None for var in input_dists.keys()} for _ in range(n_inputs)]
+    for i in range(n_inputs):
         for var, (dist, param1, param2) in input_dists.items():
             if dist == 'norm':
                 inputs[i][var] = np.random.normal(param1, param2)
@@ -138,7 +140,10 @@ def generate_adjustments() -> Dict[str, float]:
     adjustments = {}
     for adj, (dist, param1, param2) in adjustment_dist.items():
         if dist == 'norm':
-            adjustments[adj] = np.random.normal(param1, param2)
+            if 'Scale' in adj:
+                adjustments[adj] = abs(np.random.normal(param1, param2))
+            else:
+                adjustments[adj] = np.random.normal(param1, param2)
         elif dist == 'uniform':
             adjustments[adj] = np.random.uniform(param1, param2)
         else:
@@ -148,7 +153,7 @@ def generate_adjustments() -> Dict[str, float]:
 
 
 
-def brat_montecarlo(n_simulations: int, database: Path, uniform_inputs: bool):
+def brat_montecarlo(n_simulations: int, n_synthetic_inputs: int, database: str, uniform_inputs: bool):
     """
     Perform a Monte Carlo simulation on the Standard BRAT FIS
         :param n_simulations: the number of times to run the simulation
@@ -173,7 +178,9 @@ def brat_montecarlo(n_simulations: int, database: Path, uniform_inputs: bool):
                         (sim_id, var, dist, param1, param2))
 
         # Generate the synthetic inputs
-        input_reaches = generate_inputs(n_simulations, uniform_inputs)
+        input_reaches = generate_inputs(n_synthetic_inputs, uniform_inputs)
+        
+        print(input_reaches[:10])
 
         # Now perform the Monte Carlo simulation on our inputs
         for i in range(n_simulations):
@@ -182,6 +189,9 @@ def brat_montecarlo(n_simulations: int, database: Path, uniform_inputs: bool):
 
             # Generate and log adjustments for this simulation
             sim_adjustments = generate_adjustments()
+            
+            print(sim_adjustments)
+            
             placeholders = ', '.join(['?'] * len(adj_cols))
             insert_stmt = f"INSERT INTO SimulationAdjustments(SimID, {', '.join(adj_cols)}) VALUES (?, {placeholders})"
             cur.executemany(insert_stmt, (sim_id, *[sim_adjustments[col] for col in adj_cols]))
@@ -193,13 +203,16 @@ def brat_montecarlo(n_simulations: int, database: Path, uniform_inputs: bool):
                 reachid = reachi + 1
                 veg_feature_values[reachid] = {'iVeg_30EX': reach_dict['iVeg_30EX'], 'iVeg100Ex': reach_dict['iVeg100EX']}
             
+            comb_fields = ['oVC_EX', 'iGeo_Slope', 'iGeo_DA', 'iHyd_SP2', 'iHyd_SPLow', 'iGeo_Len', 'ReachCode']
             comb_feature_values = {reachi + 1: None for reachi in len(input_reaches)}
             for reachi, reach_dict in enumerate(input_reaches):
                 reachid = reachi + 1
                 comb_feature_values[reachid] = {
+                    'oVC_EX': veg_feature_values[reachid],
+                    'iGeo_Slope': reach_dict['iGeo_Slope'],
+                    'iGeo_DA': 0.1,  # Not used since max_drainage_area is None
                     'iHyd_SPlow': reach_dict['iHyd_SPlow'],
                     'iHyd_SP2': reach_dict['iHyd_SP2'],
-                    'iGeo_Slope': reach_dict['iGeo_Slope']
                 }
 
             # Run BRAT FIS for this simulation
@@ -207,14 +220,19 @@ def brat_montecarlo(n_simulations: int, database: Path, uniform_inputs: bool):
                                             sim_adjustments['Veg30_Scale'], sim_adjustments['Veg100_Scale'])
             # veg_feature_values[reachid]['oVC_EX'] now contains oVC output for each reach
 
-            # calculate_combined_fis_custom
+            calculate_combined_fis_custom(comb_feature_values, 'oVC_EX', 'oCC_EX', 'mCC_EX_CT', None,
+                                          sim_adjustments['SPlow_Shift'], sim_adjustments['SPlow_Scale'], 0.0,
+                                          sim_adjustments['SP2_Shift'], sim_adjustments['SP2_Scale'], 0.0,
+                                          sim_adjustments['Slope_Shift'], sim_adjustments['Slope_Scale'], 0.0)
 
 
             # Log the results of this simulation
-            insert_stmt = "INSERT INTO Inputs(iVeg_30EX, iVeg100EX, iHyd_SPlow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            insert_stmt = "INSERT INTO Results(iVeg_30EX, iVeg100EX, iHyd_SPlow, iHyd_SP2, iGeo_Slope) VALUES (?, ?, ?, ?, ?)"
             cur.executemany(insert_stmt, [(reach['iVeg_30EX'], reach['iVeg100EX'],
-                                           reach['iHyd_SPlow'], reach['iHyd_SP2'], reach['iGeo_Slope'],
-                                           reach['oVC_EX'], reach['oCC_EX']) for reach in input_reaches])
+                                           reach['iHyd_SPlow'], reach['iHyd_SP2'], reach['iGeo_Slope']) for reach in input_reaches])
+            
+            insert_stmt = "INSERT INTO Results(oVC_EX, oCC_EX) VALUES (?, ?)"
+            cur.executemany(insert_stmt, [(reach['oVC_EX'], reach['oCC_EX']) for reach in comb_feature_values])
 
 
 def main():
@@ -227,15 +245,15 @@ def main():
         # epilog="This is an epilog"
     )
     parser.add_argument('n_simulations', help='Integer number of simulations to run. This can be a large number.', type=int)
+    parser.add_argument('n_synthetic_inputs', help="Integer number of inputs to generate. It is recommended that this isn't quite as large as n_simulations.", type=int)
     parser.add_argument('database', help='Path to an SQLite database to store results. Can be an existing monte carlo database, in which case the results will be appended, or a new database.', type=Path)
     parser.add_argument('--uniform_inputs', help='(optional) Include this flag to use uniform distributions to generate the inputs, rather than Siletz distributions', action='store_true', default=False)
 
-    # Substitute patterns for environment varaibles
-    args = dotenv.parse_args_env(parser)
+    args = parser.parse_args()
 
     uniform = args.uniform_inputs if args.uniform_inputs else False
 
-    brat_montecarlo(args.n_simulations, args.database, uniform)
+    brat_montecarlo(args.n_simulations, args.n_synthetic_inputs, args.database, uniform)
     
     sys.exit(0)
 
