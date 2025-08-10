@@ -115,7 +115,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
                                   spl_shift: float, spl_scale: float, spl_shape: float,
                                   sp2_shift: float, sp2_scale: float, sp2_shape: float,
                                   slo_shift: float, slo_scale: float, slo_shape: float,
-                                  fis_dir: str):
+                                  fis_dir: str = None):
     """
     Calculate dam capacity and density using combined FIS
     :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -205,8 +205,6 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         a, b, c, d = calculate_trap_scale(abcd, spl_scale)
         pts[category] = [a, b, c, d]
     
-    print(pts)
-    
     # build MFs using shifted & scaled points, unless loose fit curves
     if spl_shape == 1.0:
         log.info("Running 'best fit' custom MF shapes for SPLow.")
@@ -221,10 +219,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170+c)
         splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090+c)
     else:
-        log.info("Using default SPLow membership functions.")
-        splow['can'] = fuzz.trapmf(splow.universe, [pts['can']])
-        splow['probably'] = fuzz.trapmf(splow.universe, [pts['probably']])
-        splow['cannot'] = fuzz.trapmf(splow.universe, [pts['cannot']])
+        log.info("Using default shaped SPLow membership functions.")
+        splow['can'] = fuzz.trapmf(splow.universe, pts['can'])
+        splow['probably'] = fuzz.trapmf(splow.universe, pts['probably'])
+        splow['cannot'] = fuzz.trapmf(splow.universe, pts['cannot'])
         
 
     # -- SP2 Adjustments --
@@ -251,8 +249,6 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         c = b + ((abc[2] - b) * sp2_scale)
         pts[category] = [a, b, c]
     
-    print(pts)
-    
     # build MFs using shifted & scaled points, unless loose fit curves
     if sp2_shape == 1.0:
         log.info("Running 'best fit' custom MF shapes for SP2.")
@@ -269,11 +265,11 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700+c, 250)
         sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200+c)
     else:
-        log.info("Using default SP2 membership functions.")
-        sp2['persists'] = fuzz.trapmf(sp2.universe, [pts['persists']])
-        sp2['breach'] = fuzz.trimf(sp2.universe, [pts['breach']])
-        sp2['oblowout'] = fuzz.trimf(sp2.universe, [pts['oblowout']])
-        sp2['blowout'] = fuzz.trapmf(sp2.universe, [pts['blowout']])  
+        log.info("Using default shaped SP2 membership functions.")
+        sp2['persists'] = fuzz.trapmf(sp2.universe, pts['persists'])
+        sp2['breach'] = fuzz.trimf(sp2.universe, pts['breach'])
+        sp2['oblowout'] = fuzz.trimf(sp2.universe, pts['oblowout'])
+        sp2['blowout'] = fuzz.trapmf(sp2.universe, pts['blowout'])  
 
 
     # -- Slope Adjustments --
@@ -293,8 +289,6 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         a, b, c, d = calculate_trap_scale(abcd, slo_scale)
         pts[category] = [a, b, c, d]
     
-    print(pts)
-    
     # build MFs using shifted & scaled points, unless loose fit curves
     if slo_shape == 1.0:
         log.info("Running 'best fit' custom MF shapes for Slope.")
@@ -311,11 +305,11 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165+c)
         slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585+c)
     else:
-        log.info("Using default Slope membership functions.")
-        slope['flat'] = fuzz.trapmf(slope.universe, [pts['flat']])
-        slope['can'] = fuzz.trapmf(slope.universe, [pts['can']])
-        slope['probably'] = fuzz.trapmf(slope.universe, [pts['probably']])
-        slope['cannot'] = fuzz.trapmf(slope.universe, [pts['cannot']])
+        log.info("Using default shaped Slope membership functions.")
+        slope['flat'] = fuzz.trapmf(slope.universe, pts['flat'])
+        slope['can'] = fuzz.trapmf(slope.universe, pts['can'])
+        slope['probably'] = fuzz.trapmf(slope.universe, pts['probably'])
+        slope['cannot'] = fuzz.trapmf(slope.universe, pts['cannot'])
 
 
     # build fis rule table

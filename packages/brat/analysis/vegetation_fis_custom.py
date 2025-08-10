@@ -136,7 +136,7 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     density['pervasive'] = fuzz.trapmf(density.universe, [12, 25, 45, 45])
 
     # Standard MFs reference values
-    a0, b0, c0, d0 = 0, 0, 0.1, 1   # from standard MFs
+    a0, b0, c0, d0 = 0, 0, 0.1, 1   # from standard MF
     tri_centers = {     # from standard MFs
         'barely': [0.1, 1, 2],
         'moderately': [1, 2, 3], 
