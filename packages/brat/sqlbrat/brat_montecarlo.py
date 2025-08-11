@@ -59,9 +59,9 @@ input_dists_uniform = {   # var: (distribution, [params])
 adjustment_dist = {
     # adjustment: (dist, [params])
     #             truncnorm: mu, sigma, left_bound, right_bound
-    'SPLow_Shift': ('norm', [0.0, 18.5]),
-    'SP2_Shift': ('norm', [0.0, 200]),
-    'Slope_Shift': ('norm', [0.0, 0.02]),
+    'SPLow_Shift': ('truncnorm', [0.0, 18.5, -135, 135]),
+    'SP2_Shift': ('truncnorm', [0.0, 200, -900, 900]),
+    'Slope_Shift': ('truncnorm', [0.0, 0.02, -0.10, 0.10]),
     'Veg30_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
     'Veg100_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
     'SPLow_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
@@ -210,6 +210,8 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
 
         # Now perform the Monte Carlo simulation on our inputs
         for i in range(n_simulations):
+
+            print(f">>> Performing simulation {i+1} of {n_simulations}...")
 
             # Generate and log adjustments for this simulation
             sim_adjustments = generate_adjustments()
