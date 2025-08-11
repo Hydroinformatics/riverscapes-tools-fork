@@ -7,11 +7,14 @@
     length and then extract the input values required to run the
     BRAT model for each reach segment from various GIS layers.
 
-    Philip Bailey
-    30 May 2019
-
-    Returns:
-        [type]: [description]
+    INSTRUCTIONS:
+        From the command line, with venv active, in /packages/brat/
+        Run:
+            $ python setup.py build
+            $ python setup.py install
+            $ brat_montecarlo [args]
+        For help, run:
+            $ brat_montecarlo -h
 """
 
 
@@ -66,12 +69,13 @@ adjustment_dist = {
     'Slope_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0])
 }
 
-adj_cols = [
+adjustments = [
     "Veg30_Scale", "Veg100_Scale", "SPLow_Shift", "SPLow_Scale",
     "SP2_Shift", "SP2_Scale", "Slope_Shift", "Slope_Scale"
 ]
 
-stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd_SP2", "AVG_iGeo_Slope", "AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
+input_stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd_SP2", "AVG_iGeo_Slope", "AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
+result_stat_cols = ["AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
 
 
 # HELPER FUNCTIONS
@@ -82,11 +86,13 @@ def create_db(database: Path):
         cur.execute("PRAGMA foreign_keys = ON;")
         
         cur.execute("CREATE TABLE IF NOT EXISTS Simulations(SimID INTEGER PRIMARY KEY AUTOINCREMENT, Name, Start, End, N_Inputs, N_Simulations)")
-        cur.execute(f"CREATE TABLE IF NOT EXISTS SimulationAdjustments(AdjID INTEGER PRIMARY KEY AUTOINCREMENT, SimID INTEGER, {', '.join(adj_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
-        cur.execute("CREATE TABLE IF NOT EXISTS AdjustmentDistributions(SimID, Adjustment, Distribution, Parameters, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), PRIMARY KEY (SimID, Adjustment))")
         cur.execute("CREATE TABLE IF NOT EXISTS InputDistributions(SimID, Var, Distribution, Parameters, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), PRIMARY KEY (SimID, Var))")
-        cur.execute("CREATE TABLE IF NOT EXISTS Results(ReachID INTEGER PRIMARY KEY, SimID, iVeg_30EX, iVeg100EX, iHyd_SPLow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (ReachID) REFERENCES Reaches(ReachID))")
-        cur.execute(f"CREATE TABLE IF NOT EXISTS Stats(SimID INTEGER, {', '.join(stat_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute("CREATE TABLE IF NOT EXISTS AdjustmentDistributions(SimID, Adjustment, Distribution, Parameters, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), PRIMARY KEY (SimID, Adjustment))")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS Inputs(ReachID INTEGER PRIMARY KEY, SimID, {', '.join(input_vars)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID)")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS Adjustments(AdjID INTEGER PRIMARY KEY AUTOINCREMENT, SimID INTEGER, {', '.join(adjustments)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS Results(ResultID INTEGER PRIMARY KEY, SimID, AdjID, ReachID, {', '.join(input_vars)}, {', '.join(adjustments)} oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (AdjID) REFERENCES Adjustments(AdjID), FOREIGN KEY (ReachID) REFERENCES Inputs(ReachID))")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS InputStats(SimID INTEGER PRIMARY KEY, {', '.join(input_stat_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS ResultStats(AdjID INTEGER PRIMARY KEY, SimID, {', '.join(adjustments)}, {', '.join(result_stat_cols)}, FOREIGN KEY (AdjID) REFERENCES Adjustments(AdjID), FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
 
 
 def generate_inputs(n_inputs: int, uniform: bool) -> List[Dict[str, float]]:
@@ -195,17 +201,21 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         
         conn.commit()
 
-        # Generate the synthetic inputs
+        # Generate and log the synthetic inputs
         input_reaches = generate_inputs(n_inputs, uniform_inputs)
+        placeholders = ', '.join(['?'] * len(input_vars))
+        for reach in input_reaches:
+            insert_stmt = f"INSERT INTO Inputs(SimID, {', '.join(input_vars)} VALUES (?, {placeholders})"
+            cur.execute(insert_stmt, (sim_id, *[reach[var] for var in input_vars]))
 
         # Now perform the Monte Carlo simulation on our inputs
         for i in range(n_simulations):
 
             # Generate and log adjustments for this simulation
             sim_adjustments = generate_adjustments()
-            placeholders = ', '.join(['?'] * len(adj_cols))
-            insert_stmt = f"INSERT INTO SimulationAdjustments(SimID, {', '.join(adj_cols)}) VALUES (?, {placeholders})"
-            cur.execute(insert_stmt, (sim_id, *[sim_adjustments[col] for col in adj_cols]))
+            placeholders = ', '.join(['?'] * len(adjustments))
+            insert_stmt = f"INSERT INTO SimulationAdjustments(SimID, {', '.join(adjustments)}) VALUES (?, {placeholders})"
+            cur.execute(insert_stmt, (sim_id, *[sim_adjustments[col] for col in adjustments]))
 
             # Prepare data storage to pass to the FIS functions
             # :param feature_values: Dictionary of features keyed by ReachID and values are dictionaries of attributes
@@ -228,7 +238,8 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
             calculate_vegetation_fis_custom(feature_values, 'iVeg_30EX', 'iVeg100EX', 'oVC_EX',
                                             'scale', sim_adjustments['Veg30_Scale'],
                                             'scale', sim_adjustments['Veg100_Scale'])
-            # feature_values[reachid]['oVC_EX'] now contains oVC output for each reach
+            
+            # feature_values[reachid]['oVC_EX'] now contains oVC output for each reach; used by combined fis
 
             calculate_combined_fis_custom(feature_values, 'oVC_EX', 'oCC_EX', 'mCC_EX_CT', None,
                                           sim_adjustments['SPLow_Shift'], sim_adjustments['SPLow_Scale'], 0.0,
@@ -237,9 +248,11 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
 
 
             # Log the results of this simulation
-            insert_stmt = "INSERT INTO Results(SimID, iVeg_30EX, iVeg100EX, iHyd_SPLow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            placeholders = ', '.join(['?'] * (1 + len(input_vars) + len(adjustments) + 2))
+            insert_stmt = f"INSERT INTO Results(SimID, {', '.join(input_vars)}, {', '.join(adjustments)} oVC_EX, oCC_EX) VALUES ({placeholders})"
             cur.executemany(insert_stmt, [(sim_id, reach['iVeg_30EX'], reach['iVeg100EX'],
                                            reach['iHyd_SPLow'], reach['iHyd_SP2'], reach['iGeo_Slope'],
+                                           *[sim_adjustments[adj] for adj in adjustments],
                                            reach['oVC_EX'], reach['oCC_EX']) for reach in feature_values.values()])
             conn.commit()
             
@@ -251,29 +264,62 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         print(f"Start datetime: {start_time}")
         print(f"End datetime: {end_time}")
         
-        # Populate Stats table
-        print("Now populating Stats table...")
-        stat_data = {}
-        for stat in stat_cols:
-            
+        # Populate InputStats table
+        print("Now populating InputStats table...")
+        input_stat_data = {}
+        for stat in input_stat_cols:
             if "AVG" in stat:
                 var = stat.replace("AVG_", "")
-                cur.execute(f"SELECT AVG({var}) FROM Results")
-                stat_data[stat] = round(cur.fetchone()[0], 3)
-                
-            if "StDev" in stat:
+                cur.execute(f"SELECT AVG({var}) FROM Inputs")
+                input_stat_data[stat] = round(cur.fetchone()[0], 3)
+            elif "StDev" in stat:
                 var = stat.replace("StDev_", "")
-                cur.execute(f"SELECT {var} FROM Results")
+                cur.execute(f"SELECT {var} FROM Inputs")
                 values = [row[0] for row in cur.fetchall() if row[0] is not None]
                 if len(values) > 1:
                     stdev = round(statistics.stdev(values), 3)
                 else:
                     stdev = None
-                stat_data[stat] = stdev
+                input_stat_data[stat] = stdev
         
-        placeholders = ', '.join(['?'] * (1 + len(stat_data.values())))
-        row = [sim_id] + [val for val in stat_data.values()]
-        cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
+        placeholders = ', '.join(['?'] * (1 + len(input_stat_data.values())))
+        row = [sim_id] + [val for val in input_stat_data.values()]
+        cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
+
+        # Populate ResultStats table
+        print("Now populating ResultStats table...")
+
+        # for each adjustment
+        cur.execute(f"SELECT AdjID FROM Adjustments WHERE SimID = {sim_id}")
+        adj_ids = [row[0] for row in cur.fetchall()]
+        result_stat_data = []       # list of tuples where each tuple is vals for a row
+        for adj_id in adj_ids:
+            row_data = []
+            
+            # select adjustment data
+            cur.execute(f"SELECT AdjID, SimID, {', '.join(adjustments)} FROM Adjustments WHERE SimID = {sim_id} AND AdjID = {adj_id}")
+            row_data.extend(cur.fetchone())
+
+            # select stat data
+            for stat in result_stat_cols:
+                if "AVG" in stat:
+                    var = stat.replace("AVG_", "")
+                    cur.execute(f"SELECT AVG({var}) FROM Results WHERE AdjID = {adj_id}")
+                    avg = round(cur.fetchone()[0], 3)
+                    row_data.append(avg)
+                elif "StDev" in stat:
+                    var = stat.replace("StDev_", "")
+                    cur.execute(f"SELECT {var} FROM Results WHERE AdjID = {adj_id}")
+                    values = [row[0] for row in cur.fetchall() if row[0] is not None]
+                    if len(values) > 1:
+                        stdev = round(statistics.stdev(values), 3)
+                    else:
+                        stdev = None
+                    row_data.append(stdev)
+            result_stat_data.append(tuple(row_data))
+        
+        placeholders = ', '.join(['?'] * (2 + len(adjustments) + len(result_stat_cols)))
+        cur.executemany(f"INSERT INTO ResultStats VALUES ({placeholders})", result_stat_data)
         conn.commit()
 
 
