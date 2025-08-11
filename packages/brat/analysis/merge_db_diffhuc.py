@@ -142,7 +142,7 @@ with sqlite3.connect(new_db_path) as conn:
 
     conn.commit()
 
-    # Optional Stats table to summarize results by HUC
+    # Optional Stats table to summarize results by HUC, as well as all HUCs aggregated
 
     if stats_table:
         print("Creating Stats table to summarize results by HUC...")
@@ -256,6 +256,70 @@ with sqlite3.connect(new_db_path) as conn:
             insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
             cur.execute(insert_stmt, list(row_data.values()))
             conn.commit()   
+        
+        
+        # Also add an aggregated "ALL HUCs" row
+        row_data = {col: None for col in stat_cols}
+        row_data["WatershedID"] = 0
+        row_data["HUC_Name"] = "ALL HUCs"
+
+        # Process cols_to_summarize for this huc
+        for col, operation in cols_to_summarize.items():
+            cur.execute(f"SELECT {operation}({col}) FROM Stats")
+            result = [val[0] for val in cur.fetchall()]
+            result = round(result[0], 2)    # convert from list [float] to rounded float
+            row_data[f"{operation}_{col}"] = result
+            print(f"Selected {operation}({col}) = {result} for ALL HUCs in Stats")
+        
+        # Now calculate % AND length of each capacity categories (% = length in cat / total length)
+        # Code adapted from Riverscapes' brat_report.py
+        for cat in oCC_cutoffs:
+            label = cat['label']
+            lower = cat['lower'] if 'lower' in cat else None
+            upper = cat['upper'] if 'upper' in cat else None
+            extra_clauses = []
+            extra_args = []
+            if lower is not None:
+                extra_clauses.append('oCC_EX > ?')
+                extra_args.append(lower)
+            if upper is not None:
+                extra_clauses.append('oCC_EX <= ?')
+                extra_args.append(upper)
+
+            # Build the WHERE clause
+            where_sql = ''
+            if extra_clauses:
+                where_sql = 'WHERE ' + ' AND '.join(extra_clauses)
+
+            # Calculate total length for all reaches (no WatershedID restriction)
+            cur.execute(f"SELECT SUM(iGeo_Len) FROM {new_table}")
+            total_length = cur.fetchone()[0]
+            total_length_km = total_length / 1000 if total_length else 0
+
+            # Calculate category stats for all reaches
+            cur.execute(f"""
+                SELECT SUM(iGeo_Len), SUM(iGeo_Len) * 0.000621371
+                FROM {new_table}
+                {where_sql}
+            """, extra_args)
+            row = cur.fetchone()
+            cat_length = row[0] if row and row[0] is not None else 0
+            cat_length_km = cat_length / 1000 if cat_length else 0
+            cat_length_miles = row[1] if row and row[1] is not None else 0
+            percent = round(100 * cat_length / total_length, 2) if total_length else None
+            length_km = round(cat_length_km, 2)
+            length_miles = round(cat_length_miles, 2)
+            row_data[f"{label}_Percent"] = percent
+            row_data[f"{label}_KM"] = length_km
+            row_data[f"{label}_Miles"] = length_miles
+
+            print(f"Calculated {percent}%, {length_km}km, {length_miles}mi of reaches in {cat['label']} category (ALL HUCs)")
+
+        # insert data
+        placeholders = ', '.join(['?'] * len(row_data))
+        insert_stmt = f"INSERT INTO Stats ({', '.join(stat_cols)}) VALUES({placeholders})"
+        cur.execute(insert_stmt, list(row_data.values()))
+        conn.commit()   
         
         print("Stats table complete.")
 
