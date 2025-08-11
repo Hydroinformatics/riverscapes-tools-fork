@@ -14,36 +14,21 @@
         [type]: [description]
 """
 
-import os
-import traceback
-import datetime
-import time
-import json
-from typing import List, Dict
-from osgeo import ogr
-from rscommons import GeopackageLayer
-from rscommons.classes.rs_project import RSMeta, RSMetaTypes
-from rscommons.vector_ops import copy_feature_class
-from rscommons import Logger, initGDALOGRErrors, RSLayer, RSProject, ModelConfig, dotenv
-from rscommons.util import parse_metadata, pretty_duration
-from rscommons.build_network import build_network
-from rscommons.database import create_database, SQLiteCon
-from rscommons.copy_features import copy_features_fields
-from rscommons.moving_window import moving_window_dgo_ids
-from sqlbrat.utils.vegetation_summary import vegetation_summary
-from sqlbrat.utils.vegetation_suitability import vegetation_suitability, output_vegetation_raster
-from sqlbrat.utils.vegetation_fis import vegetation_fis
-from sqlbrat.utils.combined_fis import combined_fis
-from sqlbrat.brat_report import BratReport
-from sqlbrat.__version__ import __version__
 
+import os
 import argparse
 import sys
+from typing import List, Dict
+import datetime
+import statistics
 import sqlite3
 import numpy as np
 import scipy.stats as stats
+import matplotlib.pyplot as plt
+import seaborn as sns
 from analysis.vegetation_fis_custom import calculate_vegetation_fis_custom
 from analysis.combined_fis_custom import calculate_combined_fis_custom
+from sqlbrat.__version__ import __version__
 
 Path = str
 
@@ -56,7 +41,8 @@ input_dists_sampled = {  # var: (distribution, [params])
     'iVeg100EX': ('norm', [2.110, 0.3793]),
     'iHyd_SPLow': ('expon', [0.0, 3.311]),
     'iHyd_SP2': ('expon', [244.0, 302.9]),
-    'iGeo_Slope': ('expon', [0.0, 0.1878])
+    # 'iGeo_Slope': ('expon', [0.0, 0.1878])
+    'iGeo_Slope': ('pareto', [2.375, -0.3477, 0.3477])
 }
 
 input_dists_uniform = {   # var: (distribution, [params])
@@ -70,22 +56,22 @@ input_dists_uniform = {   # var: (distribution, [params])
 adjustment_dist = {
     # adjustment: (dist, [params])
     #             truncnorm: mu, sigma, left_bound, right_bound
-    'SPlow_Shift': ('norm', [0.0, 18.5]),
+    'SPLow_Shift': ('norm', [0.0, 18.5]),
     'SP2_Shift': ('norm', [0.0, 200]),
     'Slope_Shift': ('norm', [0.0, 0.02]),
     'Veg30_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
     'Veg100_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
-    'SPlow_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
+    'SPLow_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
     'SP2_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
     'Slope_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0])
 }
 
 adj_cols = [
-    "Veg30_Scale", "Veg100_Scale", "SPlow_Shift", "SPlow_Scale",
+    "Veg30_Scale", "Veg100_Scale", "SPLow_Shift", "SPLow_Scale",
     "SP2_Shift", "SP2_Scale", "Slope_Shift", "Slope_Scale"
 ]
 
-stat_cols = ["AVG_iVeg_30EX", "Mean_iVeg100EX", "Mean_SPlow", "Mean_SP2", "Mean_Slope", "Mean_oVC_EX", "StDev_oVC_EX", "Mean_oCC_EX", "StDev_oCC_EX"]
+stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd_SP2", "AVG_iGeo_Slope", "AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
 
 
 # HELPER FUNCTIONS
@@ -132,6 +118,9 @@ def generate_inputs(n_inputs: int, uniform: bool) -> List[Dict[str, float]]:
             elif dist == 'expon':
                 inputs[i][var] = round(np.random.exponential(params[1]) + params[0], 3)
                 # print(f"Generated {var} with exponential distribution: {inputs[i][var]}")
+            elif dist == 'pareto':
+                val = float(stats.pareto.rvs(params[0], params[1], params[2], size=1))
+                inputs[i][var] = round(val, 3)
             else:
                 raise ValueError(f"Unknown distribution type: {dist}")
     
@@ -157,9 +146,7 @@ def generate_adjustments() -> Dict[str, float]:
             a_transformed, b_transformed = (a - loc) / scale, (b - loc) / scale     # per scipy docs
             rv = stats.truncnorm(a_transformed, b_transformed, loc=loc, scale=scale)
             adjustments[adj] = round(float(rv.rvs(size=1)), 2)
-            
-            print(f"Truncnorm called for {adj}. Given loc={loc}, scale={scale}, a={a}, b={b}. Generated val = {adjustments[adj]} using truncnorm({a_transformed}, {b_transformed}, {loc}, {scale})")
-            
+            # print(f"Truncnorm called for {adj}. Given loc={loc}, scale={scale}, a={a}, b={b}. Generated val = {adjustments[adj]} using truncnorm({a_transformed}, {b_transformed}, {loc}, {scale})")
         elif dist == 'uniform':
             adjustments[adj] = round(np.random.uniform(params[0], params[1]), 2)
         else:
@@ -206,12 +193,9 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
 
         # Now perform the Monte Carlo simulation on our inputs
         for i in range(n_simulations):
-            result_id = i + 1
-            sim_results = []
 
             # Generate and log adjustments for this simulation
             sim_adjustments = generate_adjustments()
-            
             placeholders = ', '.join(['?'] * len(adj_cols))
             insert_stmt = f"INSERT INTO SimulationAdjustments(SimID, {', '.join(adj_cols)}) VALUES (?, {placeholders})"
             cur.execute(insert_stmt, (sim_id, *[sim_adjustments[col] for col in adj_cols]))
@@ -240,7 +224,7 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
             # feature_values[reachid]['oVC_EX'] now contains oVC output for each reach
 
             calculate_combined_fis_custom(feature_values, 'oVC_EX', 'oCC_EX', 'mCC_EX_CT', None,
-                                          sim_adjustments['SPlow_Shift'], sim_adjustments['SPlow_Scale'], 0.0,
+                                          sim_adjustments['SPLow_Shift'], sim_adjustments['SPLow_Scale'], 0.0,
                                           sim_adjustments['SP2_Shift'], sim_adjustments['SP2_Scale'], 0.0,
                                           sim_adjustments['Slope_Shift'], sim_adjustments['Slope_Scale'], 0.0)
 
@@ -255,12 +239,30 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         end_time = datetime.datetime.now()
         cur.execute("UPDATE Simulations SET End = ? WHERE SimID = ?", (end_time, sim_id))
         
-        # Populate Stats table   ------------- TODO ------------------------
-        stat_data = {}
-        # get means
+        print("Monte Carlo Simulation complete. Populating Stats table...")
         
-        placeholders = ', '.join(['?'] * len(stat_cols))
-        # cur.execute(f"INSERT INTO Stats(SimID, {', '.join(stat_cols)}) VALUES ({placeholders}))",)
+        # Populate Stats table
+        stat_data = {}
+        for stat in stat_cols:
+            
+            if "AVG" in stat:
+                var = stat.replace("AVG_", "")
+                cur.execute(f"SELECT AVG({var}) FROM Results")
+                stat_data[stat] = round(cur.fetchone()[0], 3)
+                
+            if "StDev" in stat:
+                var = stat.replace("StDev_", "")
+                cur.execute(f"SELECT {var} FROM Results")
+                values = [row[0] for row in cur.fetchall() if row[0] is not None]
+                if len(values) > 1:
+                    stdev = round(statistics.stdev(values), 3)
+                else:
+                    stdev = None
+                stat_data[stat] = stdev
+        
+        placeholders = ', '.join(['?'] * (1 + len(stat_data.values())))
+        row = [sim_id] + [val for val in stat_data.values()]
+        cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
 
 
 def main():
@@ -285,7 +287,7 @@ def main():
 
     brat_montecarlo(args.n_simulations, args.n_synthetic_inputs, args.database, uniform, name)
     
-    print(f"BRAT Monte Carlo complete! Results logged in {args.database}")
+    print(f"BRAT Monte Carlo run complete! Results logged in {args.database}")
     
     sys.exit(0)
 

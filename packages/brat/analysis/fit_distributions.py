@@ -36,7 +36,7 @@ x_maxes = [(0, 4), (0, 4), (0, 30), (0, 1500), (0, 0.8)]
 filter_quantiles = [1.0, 1.0, 0.995, 0.95, 0.995]  # quantiles for filtering outliers. set to 1.0 to disable filtering
 
 # Distributions to try fitting (scipy.stats distributions)
-dist_names = ['norm', 'expon', 'rayleigh']
+dist_names = ['norm', 'expon', 'pareto']
 
 
 def fit_inputs(database: str):
@@ -64,7 +64,7 @@ def fit_inputs(database: str):
         
         # High-resolution x values for smooth PDFs
         x = np.linspace(xlim[0], xlim[1], 1000)
-
+            
         for dist_name in dist_names:
             print(f"Fitting {dist_name} distribution to {input_var}...")
             dist = getattr(scipy.stats, dist_name)
