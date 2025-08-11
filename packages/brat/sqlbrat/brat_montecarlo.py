@@ -88,6 +88,7 @@ def create_db(database: Path):
         cur.execute("CREATE TABLE IF NOT EXISTS Results(ReachID INTEGER PRIMARY KEY, SimID, iVeg_30EX, iVeg100EX, iHyd_SPLow, iHyd_SP2, iGeo_Slope, oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (ReachID) REFERENCES Reaches(ReachID))")
         cur.execute(f"CREATE TABLE IF NOT EXISTS Stats(SimID INTEGER, {', '.join(stat_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
 
+
 def generate_inputs(n_inputs: int, uniform: bool) -> List[Dict[str, float]]:
     """Generate synthetic inputs for the BRAT model based on the specified number of samples and distribution type.
     
@@ -166,6 +167,10 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
     """
 
     # Handle database
+    if os.path.isdir(database):
+        database = os.path.join(database, 'brat_montecarlo.db')
+    if not database.endswith('.db'):
+        database += '.db'
     create_db(database)
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
@@ -187,6 +192,8 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         for adj, (dist, params) in adjustment_dist.items():
             cur.execute("INSERT INTO AdjustmentDistributions(SimID, Adjustment, Distribution, Parameters) VALUES (?, ?, ?, ?)",
                         (sim_id, adj, dist, str(params)))
+        
+        conn.commit()
 
         # Generate the synthetic inputs
         input_reaches = generate_inputs(n_inputs, uniform_inputs)
@@ -234,14 +241,18 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
             cur.executemany(insert_stmt, [(sim_id, reach['iVeg_30EX'], reach['iVeg100EX'],
                                            reach['iHyd_SPLow'], reach['iHyd_SP2'], reach['iGeo_Slope'],
                                            reach['oVC_EX'], reach['oCC_EX']) for reach in feature_values.values()])
+            conn.commit()
             
         # Log end time of simulation
         end_time = datetime.datetime.now()
         cur.execute("UPDATE Simulations SET End = ? WHERE SimID = ?", (end_time, sim_id))
         
-        print("Monte Carlo Simulation complete. Populating Stats table...")
+        print("Monte Carlo Simulation complete.")
+        print(f"Start datetime: {start_time}")
+        print(f"End datetime: {end_time}")
         
         # Populate Stats table
+        print("Now populating Stats table...")
         stat_data = {}
         for stat in stat_cols:
             
@@ -263,6 +274,7 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         placeholders = ', '.join(['?'] * (1 + len(stat_data.values())))
         row = [sim_id] + [val for val in stat_data.values()]
         cur.execute(f"INSERT INTO Stats VALUES ({placeholders})", row)
+        conn.commit()
 
 
 def main():
@@ -276,7 +288,7 @@ def main():
     )
     parser.add_argument('n_simulations', help='Integer number of simulations to run. This can be a large number.', type=int)
     parser.add_argument('n_synthetic_inputs', help="Integer number of inputs to generate. It is recommended that this isn't quite as large as n_simulations.", type=int)
-    parser.add_argument('database', help='Path to an SQLite database to store results. Can be an existing monte carlo database, in which case the results will be appended, or a new database.', type=str)
+    parser.add_argument('database', help='Path to an SQLite database to store results. Can be an existing monte carlo database, in which case the results will be appended, or a new database, or a directory in which to create a new database.', type=str)
     parser.add_argument('--uniform_inputs', help='(optional) Include this flag to use uniform distributions to generate the inputs, rather than Siletz distributions.', action='store_true', default=False)
     parser.add_argument('--name', help='(optional) Give this Monte Carlo run a custom name for logging purposes.', type=str, default=None)
 
