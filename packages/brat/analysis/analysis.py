@@ -57,15 +57,17 @@ def input_distributions(database, out_dir):
         # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
         ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
         ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 30),
-        ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 2200),
+        ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 10),
+        ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 1500),
         ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
     ]
 
     kde_switch = False
+    
+    source_table = "CombinedOutputs"    # ReachAttributes for standard BRAT, CombinedOutputs for merged
 
     for var, descr, num_bins, log, cutoff_val in x_vars:
-        var_data = select_var(database, var)
+        var_data = select_var(database, var, source_table)
 
         # plot raw data
         sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
@@ -383,15 +385,15 @@ def hydro_limitation(database, out_dir):
     
 
 
-def select_var(database, var: str):
+def select_var(database: str, var: str, table: str = "ReachAttributes"):
     """
-    Utility function to return column of values for a specified feature from ReachAttributes
+    Utility function to return column of values for a specified feature from specified table
     :param database: path to a BRAT database (.gpkg)
     :param var: database name of the feature to be returned"""
 
     conn = sqlite3.connect(database)
     curs = conn.cursor()
-    curs.execute(f'SELECT {var} FROM ReachAttributes')
+    curs.execute(f'SELECT {var} FROM {table}')
     result = curs.fetchall()
     var_data = [row[0] for row in result]   # convert to ints from tuples
     curs.close()
