@@ -153,7 +153,7 @@ def generate_adjustments() -> Dict[str, float]:
             loc, scale, a, b = params
             a_transformed, b_transformed = (a - loc) / scale, (b - loc) / scale     # per scipy docs
             rv = stats.truncnorm(a_transformed, b_transformed, loc=loc, scale=scale)
-            adjustments[adj] = round(float(rv.rvs(size=1)), 2)
+            adjustments[adj] = round(float(rv.rvs(size=1)), 3)
             # print(f"Truncnorm called for {adj}. Given loc={loc}, scale={scale}, a={a}, b={b}. Generated val = {adjustments[adj]} using truncnorm({a_transformed}, {b_transformed}, {loc}, {scale})")
         elif dist == 'uniform':
             adjustments[adj] = round(np.random.uniform(params[0], params[1]), 3)
