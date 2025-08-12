@@ -36,6 +36,7 @@ def analyze(database, out_dir):
     # > Call analysis functions. Can turn these on or off
     capacity_percent_comparison_bars(database, out_dir)
     capacity_distance_comparison_bars(database, out_dir)
+    all_huc_report(database, out_dir)
 
     print("Analysis complete.")
 
@@ -123,13 +124,7 @@ def capacity_distance_comparison_bars(database, out_dir):
 
     categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
     
-    cat_colors = [      # from brat_report.py
-        '#f50000',
-        '#ffaa00',
-        '#f5f500',
-        '#4ce601',
-        '#005ce6'
-    ]
+    cat_colors = ['#f50000', '#ffaa00', '#f5f500', '#4ce601', '#005ce6']    # from brat_report.py
 
     units = 'KM'     # choose either 'KM' or 'Miles'
 
@@ -142,7 +137,8 @@ def capacity_distance_comparison_bars(database, out_dir):
         cur = conn.cursor()
 
         # figure out what hucs we are working with
-        cur.execute(f"SELECT WatershedID, HUC_Name FROM Stats")
+        # do not include ALL HUCs entry (id=0), since it's too big distance-wise
+        cur.execute(f"SELECT WatershedID, HUC_Name FROM Stats WHERE WatershedID != 0")
         hucs = cur.fetchall()       # list of (id, name)
         print(f"Found {len(hucs)} HUCs.")
 
@@ -174,6 +170,54 @@ def capacity_distance_comparison_bars(database, out_dir):
         plt.close()
     else:
         plt.show()
+
+def all_huc_report(database, out_dir):
+    """
+    Generate brat-report-esque pie chart of oCC_EX categorical percents for the ALL HUCs Stats
+    :param database: path to multi-huc combined BRAT database (with ALL HUCs Stats)
+    :param out_dir: optional path to a folder to save plots to
+    """
+    
+    all_huc_id = 0      # ensure this is the WatershedID for the ALL HUCs entry in Stats table
+    
+    categories = ['None', 'Rare', 'Occasional', 'Frequent', 'Pervasive']
+    
+    cat_colors = ['#f50000', '#ffaa00', '#f5f500', '#4ce601', '#005ce6']    # from brat_report.py
+
+    stat_cols = [f"{cat}_Percent" for cat in categories]    # ensure this corresponds to Stats table
+
+    # to store data for stacked bar chart
+    data = []
+
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+
+        print(f"Processing ALL HUCs (WatershedID = {all_huc_id})...")
+
+        # select the length values for each category for this HUC
+        cur.execute(f"SELECT WatershedID, {', '.join(stat_cols)} FROM Stats WHERE WatershedID = {all_huc_id}")
+        cap_data = cur.fetchone()[1:]   # store everything except WatershedID
+        print(f"For ALL HUCs, selected percents = {cap_data}")
+        
+        # store data
+        for i in range(len(categories)):
+            data.append(cap_data[i])
+    
+    print(data)
+    # now construct bar chart
+    plt.pie(data, labels=categories, colors=cat_colors, autopct='%.0f%%')
+
+    plt.title("Categorical Percent Breakdown of Existing Capacity for ALL HUCs")
+    
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "oCC_EX-all-pie.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+    
+    
 
 
 

@@ -259,13 +259,14 @@ with sqlite3.connect(new_db_path) as conn:
         
         
         # Also add an aggregated "ALL HUCs" row
+        
         row_data = {col: None for col in stat_cols}
         row_data["WatershedID"] = 0
         row_data["HUC_Name"] = "ALL HUCs"
 
         # Process cols_to_summarize for this huc
         for col, operation in cols_to_summarize.items():
-            cur.execute(f"SELECT {operation}({col}) FROM Stats")
+            cur.execute(f"SELECT {operation}({operation}_{col}) FROM Stats")
             result = [val[0] for val in cur.fetchall()]
             result = round(result[0], 2)    # convert from list [float] to rounded float
             row_data[f"{operation}_{col}"] = result
