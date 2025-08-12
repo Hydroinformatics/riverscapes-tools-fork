@@ -6,6 +6,9 @@ Can print or save matplotlib plots.
 INSTRUCTIONS:
     Run the script from the terminal, passing args (e.g. path to database) as defined
 
+DISCLAIMER:
+    AI and online resources were used to assist in writing these functions
+
 Evan Hackstadt
 August 2025
 """
@@ -19,10 +22,15 @@ import argparse
 import traceback
 import sqlite3
 import numpy as np
+import pandas as pd
+from scipy import stats
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 
-import analysis.analysis as analysis
+# import analysis
 
 
 def analyze(database, out_dir):
@@ -37,16 +45,298 @@ def analyze(database, out_dir):
 
     # > Call analysis functions. Can turn these on or off
     
+    # Create tornado diagram
+    tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
+    # Compare multiple methods
+    # compare_sensitivity_methods(analysis_data)
+
+    # Access detailed results
+    print("Most sensitive parameter:", tornado_results['summary_table'].iloc[0]['Parameter'])
+    print("Sensitivity value:", tornado_results['summary_table'].iloc[0]['Sensitivity'])
+    
+    # OLD ANALYSIS.PY
     input_distributions(database, out_dir)
     # output_distribution(database, out_dir)
     # capacity_scatter_plots(database, out_dir)
     # capacity_scatter_plots_zoomed(database, out_dir)
     # hydro_limitation(database, out_dir)
     # capacity_bar_plots(database, out_dir)
-
+    
     print("Analysis complete.")
 
 
+# Modular analysis functions
+def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlation', 
+                         title=None, figsize=(10, 8), out_dir=None):
+    """
+    Create tornado diagram showing parameter sensitivity for Monte Carlo results.
+    
+    Parameters:
+    -----------
+    database: str
+        Path to the Monte Carlo database
+    output_col : str
+        Name of output column (default: 'oCC_EX')
+    method : str
+        Sensitivity method: 'correlation', 'regression', or 'standardized'
+    title : str
+        Custom plot title
+    figsize : tuple
+        Figure size (width, height)
+    save_path : str
+        Path to save figure (optional)
+    
+    Returns:
+    --------
+    sensitivity_results : dict
+        Dictionary with sensitivity metrics and statistics
+    """
+    
+    # Define parameter names and create clean labels
+    param_columns = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift',
+                     'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift']
+    
+    param_labels = {
+        'Veg30_Scale': '30m Vegetation\nSuitability Scale',
+        'Veg100_Scale': '100m Vegetation\nSuitability Scale', 
+        'SPLow_Scale': 'Baseflow Stream\nPower Scale',
+        'SPLow_Shift': 'Baseflow Stream\nPower Shift',
+        'SP2_Scale': 'Peak Flow Stream\nPower Scale',
+        'SP2_Shift': 'Peak Flow Stream\nPower Shift',
+        'Slope_Scale': 'Slope Scale',
+        'Slope_Shift': 'Slope Shift'
+    }
+    
+    # Extract data from database
+    results_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift', 
+                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift',
+                    'AVG_oVC_EX', 'StDev_oVC_EX', 'AVG_oCC_EX', 'StDev_oVC_EX']
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT {', '.join(results_cols)} FROM ResultStats")
+        results = cur.fetchall()
+        results_data = pd.DataFrame(results, columns=results_cols)
+        print(results_data)
+        
+    # Calculate sensitivity metrics
+    sensitivity_metrics = {}
+    p_values = {}
+    
+    for param in param_columns:
+        if param not in results_data.columns:
+            print(f"Warning: {param} not found in data")
+            continue
+            
+        x = results_data[param].values
+        y = results_data[output_col].values
+        
+        # Remove any NaN values
+        mask = ~(np.isnan(x) | np.isnan(y))
+        x_clean = x[mask]
+        y_clean = y[mask]
+        
+        if len(x_clean) < 10:  # Need minimum data points
+            print(f"Warning: Insufficient data for {param}")
+            continue
+        
+        if method == 'correlation':
+            # Pearson correlation coefficient
+            corr_coef, p_val = stats.pearsonr(x_clean, y_clean)
+            sensitivity_metrics[param] = corr_coef
+            p_values[param] = p_val
+            
+        elif method == 'regression':
+            # Standardized regression coefficient
+            scaler_x = StandardScaler()
+            scaler_y = StandardScaler()
+            
+            x_std = scaler_x.fit_transform(x_clean.reshape(-1, 1)).flatten()
+            y_std = scaler_y.fit_transform(y_clean.reshape(-1, 1)).flatten()
+            
+            reg = LinearRegression()
+            reg.fit(x_std.reshape(-1, 1), y_std)
+            sensitivity_metrics[param] = reg.coef_[0]
+            
+            # Calculate p-value for regression coefficient
+            from scipy.stats import t
+            n = len(x_clean)
+            y_pred = reg.predict(x_std.reshape(-1, 1))
+            mse = np.mean((y_std - y_pred) ** 2)
+            se = np.sqrt(mse / np.sum((x_std - np.mean(x_std)) ** 2))
+            t_stat = reg.coef_[0] / se
+            p_val = 2 * (1 - t.cdf(np.abs(t_stat), n - 2))
+            p_values[param] = p_val
+            
+        elif method == 'standardized':
+            # Standard deviation-based sensitivity (Morris-like)
+            param_range = np.percentile(x_clean, 95) - np.percentile(x_clean, 5)
+            output_range = np.percentile(y_clean, 95) - np.percentile(y_clean, 5)
+            sensitivity_metrics[param] = output_range / param_range if param_range != 0 else 0
+            
+            # Use correlation p-value for significance
+            _, p_val = stats.pearsonr(x_clean, y_clean)
+            p_values[param] = p_val
+    
+    # Sort parameters by absolute sensitivity
+    sorted_params = sorted(sensitivity_metrics.keys(), 
+                          key=lambda x: abs(sensitivity_metrics[x]), reverse=False)
+    
+    # Prepare data for plotting
+    param_names = [param_labels[p] for p in sorted_params]
+    sensitivities = [sensitivity_metrics[p] for p in sorted_params]
+    p_vals = [p_values[p] for p in sorted_params]
+    
+    # Create tornado plot
+    plt.figure(figsize=figsize)
+    
+    # Color bars by sign and significance
+    colors = []
+    for i, (sens, p_val) in enumerate(zip(sensitivities, p_vals)):
+        if p_val < 0.05:  # Significant
+            if sens > 0:
+                colors.append('#d62728')  # Red for positive significant
+            else:
+                colors.append('#2ca02c')  # Green for negative significant
+        else:  # Not significant
+            if sens > 0:
+                colors.append('#ff7f7f')  # Light red for positive non-significant
+            else:
+                colors.append('#7fbf7f')  # Light green for negative non-significant
+    
+    # Create horizontal bar chart
+    y_pos = np.arange(len(param_names))
+    bars = plt.barh(y_pos, sensitivities, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+    
+    # Customize plot
+    plt.yticks(y_pos, param_names, fontsize=11)
+    plt.xlabel(f'Sensitivity Index ({method.capitalize()})', fontsize=12, fontweight='bold')
+    plt.ylabel('Model Parameters', fontsize=12, fontweight='bold')
+    
+    if title is None:
+        if method == 'correlation':
+            title = 'Parameter Sensitivity for Combined Capacity (oCC)\nPearson Correlation Coefficients'
+        elif method == 'regression':
+            title = 'Parameter Sensitivity for Combined Capacity (oCC)\nStandardized Regression Coefficients'
+        else:
+            title = 'Parameter Sensitivity for Combined Capacity (oCC)\nStandardized Sensitivity Index'
+    
+    plt.title(title, fontsize=14, fontweight='bold', pad=20)
+    
+    # Add vertical line at zero
+    plt.axvline(x=0, color='black', linestyle='-', linewidth=0.8)
+    
+    # Add significance indicators
+    for i, (bar, p_val) in enumerate(zip(bars, p_vals)):
+        if p_val < 0.001:
+            sig_text = '***'
+        elif p_val < 0.01:
+            sig_text = '**'
+        elif p_val < 0.05:
+            sig_text = '*'
+        else:
+            sig_text = 'ns'
+        
+        # Position text at end of bar
+        x_pos = bar.get_width()
+        if x_pos >= 0:
+            plt.text(x_pos + 0.01 * max(sensitivities), i, sig_text, 
+                    va='center', ha='left', fontsize=10, fontweight='bold')
+        else:
+            plt.text(x_pos - 0.01 * max(abs(np.array(sensitivities))), i, sig_text, 
+                    va='center', ha='right', fontsize=10, fontweight='bold')
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#d62728', label='Positive Effect (p < 0.05)'),
+        Patch(facecolor='#2ca02c', label='Negative Effect (p < 0.05)'),
+        Patch(facecolor='#ff7f7f', label='Positive Effect (p ≥ 0.05)'),
+        Patch(facecolor='#7fbf7f', label='Negative Effect (p ≥ 0.05)')
+    ]
+    plt.legend(handles=legend_elements, fontsize=10)
+    
+    # Add significance note
+    plt.figtext(0.02, 0.02, '* p < 0.05, ** p < 0.01, *** p < 0.001, ns = not significant', 
+                fontsize=9, style='italic')
+    
+    plt.tight_layout()
+    plt.grid(axis='x', alpha=0.3)
+    
+    if out_dir is not None:
+        print(f"...Saving tornado plot...")
+        out_file_path = os.path.join(out_dir, "mc-tornado.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+    
+    # Create summary table
+    summary_df = pd.DataFrame({
+        'Parameter': [param_labels[p] for p in sorted_params],
+        'Sensitivity': sensitivities,
+        'P_value': p_vals,
+        'Rank': range(1, len(sorted_params) + 1),
+        'Significant': ['Yes' if p < 0.05 else 'No' for p in p_vals]
+    })
+    
+    print("\nSensitivity Analysis Summary:")
+    print("=" * 60)
+    print(summary_df.to_string(index=False, float_format='%.4f'))
+    
+    # Return results for further analysis
+    results = {
+        'sensitivity_metrics': sensitivity_metrics,
+        'p_values': p_values,
+        'summary_table': summary_df,
+        'method': method
+    }
+    
+    return results
+
+
+def compare_sensitivity_methods(results_data, output_col='oCC', figsize=(15, 6)):
+    """
+    Compare tornado diagrams using different sensitivity methods side by side.
+    """
+    methods = ['correlation', 'regression', 'standardized']
+    method_titles = ['Pearson Correlation', 'Regression Coefficient', 'Range-Based Index']
+    
+    fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True)
+    
+    for i, (method, method_title) in enumerate(zip(methods, method_titles)):
+        plt.sca(axes[i])
+        results = create_tornado_diagram(results_data, output_col=output_col, 
+                                       method=method, title=method_title,
+                                       figsize=(5, 6))
+        if i > 0:
+            plt.ylabel('')  # Remove y-label for subsequent plots
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return None
+
+    
+def analyze_parameter_effects(data, param_name, output_name='oCC'):
+    """
+    Comprehensive analysis of single parameter effect
+    Returns: scatter plot, regression stats, distribution analysis
+    """
+    # Scatter plot with trendline
+    # Calculate R², p-value, correlation coefficient
+    # Box plot showing output distribution
+    
+def compare_fis_pathways(data):
+    """
+    Compare vegetation-only vs full model uncertainty
+    Shows: oVC variability vs oCC variability
+    """
+    # Calculate variance contributions
+    # Create comparative visualization
+
+
+
+# OLD ANALYSIS.PY
 
 def input_distributions(database, out_dir):
     """
@@ -67,7 +357,7 @@ def input_distributions(database, out_dir):
     kde_switch = False
 
     for var, descr, num_bins, log, cutoff_val in x_vars:
-        var_data = select_var(database, var)
+        var_data = select_var(database, var, "Inputs")
 
         # plot raw data
         sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
