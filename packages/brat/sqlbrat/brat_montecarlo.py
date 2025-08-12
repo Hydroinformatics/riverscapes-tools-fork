@@ -36,7 +36,8 @@ from sqlbrat.__version__ import __version__
 Path = str
 
 
-# Useful info
+# -- USEFUL INFO & CONFIGURATION --
+
 input_vars = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPLow', 'iHyd_SP2', 'iGeo_Slope']
 
 input_dists_sampled = {  # var: (distribution, [params])
@@ -78,9 +79,9 @@ input_stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd
 result_stat_cols = ["AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
 
 
-# HELPER FUNCTIONS
+# -- HELPER FUNCTIONS -- 
 
-def create_db(database: Path):
+def create_db(database: str):
     with sqlite3.connect(database) as conn:
         cur = conn.cursor()
         cur.execute("PRAGMA foreign_keys = ON;")
@@ -163,6 +164,75 @@ def generate_adjustments() -> Dict[str, float]:
     return adjustments
 
 
+def populate_stats(database: str, sim_id: int):
+    """Populate Stats tables in the database using Results data.
+    
+    Args:
+        database (str): Path to the Monte Carlo database.
+        sim_id: the simulation ID (SimID) for this simulation.
+        adj_id: the adjustment ID (AdjID) 
+    """
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+        
+        # Populate InputStats table
+        print("Now populating InputStats table...")
+        input_stat_data = {}
+        for stat in input_stat_cols:
+            if "AVG" in stat:
+                var = stat.replace("AVG_", "")
+                cur.execute(f"SELECT AVG({var}) FROM Results")
+                input_stat_data[stat] = round(cur.fetchone()[0], 3)
+            elif "StDev" in stat:
+                var = stat.replace("StDev_", "")
+                cur.execute(f"SELECT {var} FROM Results")
+                values = [row[0] for row in cur.fetchall() if row[0] is not None]
+                if len(values) > 1:
+                    stdev = round(statistics.stdev(values), 3)
+                else:
+                    stdev = None
+                input_stat_data[stat] = stdev
+        
+        placeholders = ', '.join(['?'] * (1 + len(input_stat_data.values())))
+        row = [sim_id] + [val for val in input_stat_data.values()]
+        cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
+
+        # Populate ResultStats table
+        print("Now populating ResultStats table...")
+
+        cur.execute(f"SELECT AdjID FROM Adjustments WHERE SimID = {sim_id}")
+        adj_ids = [row[0] for row in cur.fetchall()]
+        result_stat_data = []       # list of tuples where each tuple is vals for a row
+        for adj_id in adj_ids:
+            row_data = []
+            # select adjustment data
+            cur.execute(f"SELECT AdjID, SimID, {', '.join(adjustments)} FROM Adjustments WHERE SimID = {sim_id} AND AdjID = {adj_id}")
+            row_data.extend(cur.fetchone())
+            # select stat data
+            for stat in result_stat_cols:
+                if "AVG" in stat:
+                    var = stat.replace("AVG_", "")
+                    cur.execute(f"SELECT AVG({var}) FROM Results WHERE AdjID = {adj_id}")
+                    avg = round(cur.fetchone()[0], 3)
+                    row_data.append(avg)
+                elif "StDev" in stat:
+                    var = stat.replace("StDev_", "")
+                    cur.execute(f"SELECT {var} FROM Results WHERE AdjID = {adj_id}")
+                    values = [row[0] for row in cur.fetchall() if row[0] is not None]
+                    if len(values) > 1:
+                        stdev = round(statistics.stdev(values), 3)
+                    else:
+                        stdev = None
+                    row_data.append(stdev)
+            result_stat_data.append(tuple(row_data))
+        
+        placeholders = ', '.join(['?'] * (2 + len(adjustments) + len(result_stat_cols)))
+        cur.executemany(f"INSERT INTO ResultStats VALUES ({placeholders})", result_stat_data)
+        conn.commit()
+
+
+
+# -- MASTER FUNCTION
 
 def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_inputs: bool, name: str = None):
     """
@@ -258,7 +328,10 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
                                            *[sim_adjustments[adj] for adj in adjustments],
                                            reach['oVC_EX'], reach['oCC_EX']) for reach_i, reach in enumerate(feature_values.values())])
             conn.commit()
-            
+        
+        # Compute and log statistics
+        populate_stats(database, sim_id)
+        
         # Log end time of simulation
         end_time = datetime.datetime.now()
         cur.execute("UPDATE Simulations SET End = ? WHERE SimID = ?", (end_time, sim_id))
@@ -267,61 +340,9 @@ def brat_montecarlo(n_simulations: int, n_inputs: int, database: str, uniform_in
         print(f"Start datetime: {start_time}")
         print(f"End datetime: {end_time}")
         
-        # Populate InputStats table
-        print("Now populating InputStats table...")
-        input_stat_data = {}
-        for stat in input_stat_cols:
-            if "AVG" in stat:
-                var = stat.replace("AVG_", "")
-                cur.execute(f"SELECT AVG({var}) FROM Results")
-                input_stat_data[stat] = round(cur.fetchone()[0], 3)
-            elif "StDev" in stat:
-                var = stat.replace("StDev_", "")
-                cur.execute(f"SELECT {var} FROM Results")
-                values = [row[0] for row in cur.fetchall() if row[0] is not None]
-                if len(values) > 1:
-                    stdev = round(statistics.stdev(values), 3)
-                else:
-                    stdev = None
-                input_stat_data[stat] = stdev
-        
-        placeholders = ', '.join(['?'] * (1 + len(input_stat_data.values())))
-        row = [sim_id] + [val for val in input_stat_data.values()]
-        cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
 
-        # Populate ResultStats table
-        print("Now populating ResultStats table...")
 
-        cur.execute(f"SELECT AdjID FROM Adjustments WHERE SimID = {sim_id}")
-        adj_ids = [row[0] for row in cur.fetchall()]
-        result_stat_data = []       # list of tuples where each tuple is vals for a row
-        for adj_id in adj_ids:
-            row_data = []
-            # select adjustment data
-            cur.execute(f"SELECT AdjID, SimID, {', '.join(adjustments)} FROM Adjustments WHERE SimID = {sim_id} AND AdjID = {adj_id}")
-            row_data.extend(cur.fetchone())
-            # select stat data
-            for stat in result_stat_cols:
-                if "AVG" in stat:
-                    var = stat.replace("AVG_", "")
-                    cur.execute(f"SELECT AVG({var}) FROM Results WHERE AdjID = {adj_id}")
-                    avg = round(cur.fetchone()[0], 3)
-                    row_data.append(avg)
-                elif "StDev" in stat:
-                    var = stat.replace("StDev_", "")
-                    cur.execute(f"SELECT {var} FROM Results WHERE AdjID = {adj_id}")
-                    values = [row[0] for row in cur.fetchall() if row[0] is not None]
-                    if len(values) > 1:
-                        stdev = round(statistics.stdev(values), 3)
-                    else:
-                        stdev = None
-                    row_data.append(stdev)
-            result_stat_data.append(tuple(row_data))
-        
-        placeholders = ', '.join(['?'] * (2 + len(adjustments) + len(result_stat_cols)))
-        cur.executemany(f"INSERT INTO ResultStats VALUES ({placeholders})", result_stat_data)
-        conn.commit()
-
+# -- CLI MAIN FUNCTION --
 
 def main():
     """
