@@ -101,7 +101,7 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
     """
 
     log = Logger('CUSTOM Vegetation FIS')
-    log.info('Initializing CUSTOM Vegetation FIS')
+    # log.info('Initializing CUSTOM Vegetation FIS')
 
     feature_count = len(feature_values)
     reachid_array = np.zeros(feature_count, np.int64)
@@ -270,7 +270,11 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         veg_fis.input['input1'] = riparian_array[i]
         veg_fis.input['input2'] = streamside_array[i]
         veg_fis.compute()
-        result = veg_fis.output['result']
+        if veg_fis.output['result']:
+            result = veg_fis.output['result']
+        else:
+            log.warning(f"Error processing inputs: iVeg_100={riparian_array[i]}, iVeg_30={streamside_array[i]}. Logging oCC as -1.0.")
+            result = 0.0
 
         # set ovc_* to 0 if output falls fully in 'none' category and to 40 if falls fully in 'pervasive' category
         if round(result, 6) == defuzz_centroid:
@@ -285,10 +289,11 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         progbar.update(counter)
 
     progbar.finish()
-    log.info('Custom Veg FIS Done')
+    # log.info('Custom Veg FIS Done')
     
     
     '''VISUALIZE MEMBERSHIP FUNCTIONS'''
+    '''
     log.info('Visualizing Adjusted MFs...')
     
     # Riparian
@@ -314,6 +319,7 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         out_file_path = os.path.join(fis_dir, "fis-veg-streamside.png")
         plt.savefig(out_file_path)
     plt.close()
+    '''
 
     # Density - should remain unchanged
     '''

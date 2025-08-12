@@ -129,10 +129,10 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     """
 
     log = Logger('CUSTOM Combined FIS')
-    log.info('Initializing CUSTOM Combined FIS')
+    # log.info('Initializing CUSTOM Combined FIS')
 
-    if not max_drainage_area:
-        log.warning('Missing max drainage area. Calculating combined FIS without max drainage threshold.')
+    '''if not max_drainage_area:
+        log.warning('Missing max drainage area. Calculating combined FIS without max drainage threshold.')'''
 
     # get arrays for fields of interest
     feature_count = len(feature_values)
@@ -219,7 +219,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         splow['probably'] = fuzz.gbellmf(splow.universe, 10, 2, 170+c)
         splow['cannot'] = fuzz.gbellmf(splow.universe, 4910, 750, 5090+c)
     else:
-        log.info("Using default shaped SPLow membership functions.")
+        # log.info("Using default shaped SPLow membership functions.")
         splow['can'] = fuzz.trapmf(splow.universe, pts['can'])
         splow['probably'] = fuzz.trapmf(splow.universe, pts['probably'])
         splow['cannot'] = fuzz.trapmf(splow.universe, pts['cannot'])
@@ -265,7 +265,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         sp2['oblowout'] = fuzz.gaussmf(sp2.universe, 1700+c, 250)
         sp2['blowout'] = fuzz.gbellmf(sp2.universe, 4200, 20, 6200+c)
     else:
-        log.info("Using default shaped SP2 membership functions.")
+        # log.info("Using default shaped SP2 membership functions.")
         sp2['persists'] = fuzz.trapmf(sp2.universe, pts['persists'])
         sp2['breach'] = fuzz.trimf(sp2.universe, pts['breach'])
         sp2['oblowout'] = fuzz.trimf(sp2.universe, pts['oblowout'])
@@ -305,7 +305,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         slope['probably'] = fuzz.gbellmf(slope.universe, 0.035, 1.5, 0.165+c)
         slope['cannot'] = fuzz.gbellmf(slope.universe, 0.38, 14, 0.585+c)
     else:
-        log.info("Using default shaped Slope membership functions.")
+        # log.info("Using default shaped Slope membership functions.")
         slope['flat'] = fuzz.trapmf(slope.universe, pts['flat'])
         slope['can'] = fuzz.trapmf(slope.universe, pts['can'])
         slope['probably'] = fuzz.trapmf(slope.universe, pts['probably'])
@@ -313,7 +313,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
 
 
     # build fis rule table
-    log.info('Building FIS rule table')
+    # log.info('Building FIS rule table')
     comb_ctrl = ctrl.ControlSystem([
         ctrl.Rule(ovc['none'], density['none']),
         ctrl.Rule(splow['cannot'], density['none']),
@@ -409,7 +409,11 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
             comb_fis.input['input3'] = hydlow_array[i]
             comb_fis.input['input4'] = slope_array[i]
             comb_fis.compute()
-            capacity = comb_fis.output['result']
+            if comb_fis.output['result']:
+                capacity = comb_fis.output['result']
+            else:
+                log.warning(f"Error processing inputs: oVC={veg_array[i]}, SPLow={hydlow_array[i]}, SP2={hydq2_array[i]}, Slope={slope_array[i]}. Logging oCC as -1.0.")
+                capacity = 0.0
 
             # Combined FIS result cannot be higher than limiting vegetation FIS result
             if capacity > veg_array[i]:
@@ -444,7 +448,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         progbar.update(counter)
 
     '''VISUALIZE MFS'''
-    log.info('Visualizing Adjusted MFs...')
+    # log.info('Visualizing Adjusted MFs...')
     
     # oVC - should remain unchanged
     '''
@@ -459,6 +463,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         out_file_path = os.path.join(fis_dir, "fis-comb-ovc.png")
         plt.savefig(out_file_path)
     plt.close()
+    '''
     '''
     # SPLow
     for label, color in zip(list(splow.terms.keys()), ['g', 'y', 'r']):
@@ -498,7 +503,8 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
         out_file_path = os.path.join(fis_dir, "fis-comb-slope.png")
         plt.savefig(out_file_path)
     plt.close()
-
+    '''
+    
     # Density - should remain unchanged
     '''
     fig, axs = plt.subplots(1, 1, figsize=(12, 4))
@@ -515,7 +521,7 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     plt.close()
     '''
     progbar.finish()
-    log.info('Done')
+    # log.info('Done')
 
 
 # scaling equations:
