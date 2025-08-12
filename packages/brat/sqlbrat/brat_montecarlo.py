@@ -145,9 +145,9 @@ def generate_adjustments() -> Dict[str, float]:
         # print(f"Generating adjustment {adj} with distribution {dist} and parameters ({param1}, {param2})")
         if dist == 'norm':
             if 'Scale' in adj:  # scale factor should be positive
-                adjustments[adj] = round(abs(np.random.normal(params[0], params[1])), 2)
+                adjustments[adj] = round(abs(np.random.normal(params[0], params[1])), 3)
             else:
-                adjustments[adj] = round(np.random.normal(params[0], params[1]), 2)
+                adjustments[adj] = round(np.random.normal(params[0], params[1]), 3)
         elif dist == 'truncnorm':
             loc, scale, a, b = params
             a_transformed, b_transformed = (a - loc) / scale, (b - loc) / scale     # per scipy docs
@@ -155,7 +155,7 @@ def generate_adjustments() -> Dict[str, float]:
             adjustments[adj] = round(float(rv.rvs(size=1)), 2)
             # print(f"Truncnorm called for {adj}. Given loc={loc}, scale={scale}, a={a}, b={b}. Generated val = {adjustments[adj]} using truncnorm({a_transformed}, {b_transformed}, {loc}, {scale})")
         elif dist == 'uniform':
-            adjustments[adj] = round(np.random.uniform(params[0], params[1]), 2)
+            adjustments[adj] = round(np.random.uniform(params[0], params[1]), 3)
         else:
             raise ValueError(f"Unknown distribution type: {dist}")
     
