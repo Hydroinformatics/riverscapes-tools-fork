@@ -400,49 +400,45 @@ def calculate_combined_fis_custom(feature_values: dict, veg_fis_field: str, capa
     for i, reach_id in enumerate(reachid_array):
 
         capacity = 0.0
+        calculated = False
         # Only compute FIS if the reach has less than user-defined max drainage area.
         # this enforces a stream size threshold above which beaver dams won't persist and/or won't be built
         if not max_drainage_area or drain_array[i] < max_drainage_area:
-
+            calculated = True
             comb_fis.input['input1'] = veg_array[i]
             comb_fis.input['input2'] = hydq2_array[i]
             comb_fis.input['input3'] = hydlow_array[i]
             comb_fis.input['input4'] = slope_array[i]
             comb_fis.compute()
-            if comb_fis.output['result']:
-                capacity = comb_fis.output['result']
-            else:
-                log.warning(f"Error processing inputs: oVC={veg_array[i]}, SPLow={hydlow_array[i]}, SP2={hydq2_array[i]}, Slope={slope_array[i]}. Logging oCC as -1.0.")
-                capacity = 0.0
-
-            # Combined FIS result cannot be higher than limiting vegetation FIS result
-            if capacity > veg_array[i]:
-                capacity = veg_array[i]
-
-            if round(capacity, 6) == defuzz_centroid:
-                capacity = 0.0
 
         elif drain_array[i] >= max_drainage_area and reachcode_array[i] == 33600:
-
+            calculated = True
             comb_fis.input['input1'] = veg_array[i]
             comb_fis.input['input2'] = hydq2_array[i]
             comb_fis.input['input3'] = hydlow_array[i]
             comb_fis.input['input4'] = slope_array[i]
             comb_fis.compute()
-            capacity = comb_fis.output['result']
 
+        # handle errors
+        if calculated and 'result' in comb_fis.output:
+            capacity = comb_fis.output['result']
             # Combined FIS result cannot be higher than limiting vegetation FIS result
             if capacity > veg_array[i]:
                 capacity = veg_array[i]
 
             if round(capacity, 6) == defuzz_centroid:
                 capacity = 0.0
+        
+            count = capacity * (feature_values[reach_id]['iGeo_Len'] / 1000.0)
+            count = 1.0 if 0 < count < 1 else count
 
-        count = capacity * (feature_values[reach_id]['iGeo_Len'] / 1000.0)
-        count = 1.0 if 0 < count < 1 else count
+            feature_values[reach_id][capacity_field] = round(capacity, 2)
+            feature_values[reach_id][dam_count_field] = round(count, 2)
 
-        feature_values[reach_id][capacity_field] = round(capacity, 2)
-        feature_values[reach_id][dam_count_field] = round(count, 2)
+        else:
+            log.warning(f"Error processing inputs. comb_fis.output = {comb_fis.output}. Logging oCC as None.")
+            feature_values[reach_id][capacity_field] = None
+            feature_values[reach_id][dam_count_field] = None
 
         counter += 1
         progbar.update(counter)

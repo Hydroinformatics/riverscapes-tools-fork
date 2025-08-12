@@ -270,20 +270,24 @@ def calculate_vegetation_fis_custom(feature_values: dict, streamside_field: str,
         veg_fis.input['input1'] = riparian_array[i]
         veg_fis.input['input2'] = streamside_array[i]
         veg_fis.compute()
-        if veg_fis.output['result']:
+        
+        # handle errors
+        if 'result' in veg_fis.output:
             result = veg_fis.output['result']
+            # set ovc_* to 0 if output falls fully in 'none' category and to 40 if falls fully in 'pervasive' category
+            if round(result, 6) == defuzz_centroid:
+                result = 0.0
+
+            if round(result) >= defuzz_pervasive:
+                result = 40.0
+
+            feature_values[reach_id][out_field] = round(result, 2)
+
         else:
-            log.warning(f"Error processing inputs: iVeg_100={riparian_array[i]}, iVeg_30={streamside_array[i]}. Logging oCC as -1.0.")
-            result = 0.0
+            log.warning(f"Error processing inputs: iVeg_100={riparian_array[i]}, iVeg_30={streamside_array[i]}. Logging oCC as None.")
+            result = None
+            feature_values[reach_id][out_field] = result
 
-        # set ovc_* to 0 if output falls fully in 'none' category and to 40 if falls fully in 'pervasive' category
-        if round(result, 6) == defuzz_centroid:
-            result = 0.0
-
-        if round(result) >= defuzz_pervasive:
-            result = 40.0
-
-        feature_values[reach_id][out_field] = round(result, 2)
 
         counter += 1
         progbar.update(counter)
