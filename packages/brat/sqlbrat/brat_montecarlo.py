@@ -76,6 +76,7 @@ adjustments = [
 ]
 
 input_stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd_SP2", "AVG_iGeo_Slope", "AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
+adjustment_stat_cols = [f"AVG_{adj}" for adj in adjustments] + [f"StDev_{adj}" for adj in adjustments]
 result_stat_cols = ["AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
 
 
@@ -93,6 +94,7 @@ def create_db(database: str):
         cur.execute(f"CREATE TABLE IF NOT EXISTS Adjustments(AdjID INTEGER PRIMARY KEY AUTOINCREMENT, SimID INTEGER, {', '.join(adjustments)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
         cur.execute(f"CREATE TABLE IF NOT EXISTS Results(ResultID INTEGER PRIMARY KEY, SimID, AdjID, ReachID, {', '.join(input_vars)}, {', '.join(adjustments)}, oVC_EX, oCC_EX, FOREIGN KEY (SimID) REFERENCES Simulations(SimID), FOREIGN KEY (AdjID) REFERENCES Adjustments(AdjID), FOREIGN KEY (ReachID) REFERENCES Inputs(ReachID))")
         cur.execute(f"CREATE TABLE IF NOT EXISTS InputStats(SimID INTEGER PRIMARY KEY, {', '.join(input_stat_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
+        cur.execute(f"CREATE TABLE IF NOT EXISTS AdjustmentStats(SimID INTEGER PRIMARY KEY, {', '.join(adjustment_stat_cols)}, FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
         cur.execute(f"CREATE TABLE IF NOT EXISTS ResultStats(AdjID INTEGER PRIMARY KEY, SimID, {', '.join(adjustments)}, {', '.join(result_stat_cols)}, FOREIGN KEY (AdjID) REFERENCES Adjustments(AdjID), FOREIGN KEY (SimID) REFERENCES Simulations(SimID))")
 
 
@@ -171,6 +173,7 @@ def generate_adjustments() -> Dict[str, float]:
 
 def populate_stats(database: str, sim_id: int):
     """Populate Stats tables in the database using Results data.
+    Currently just populates each separately; could consolidate for more efficiency
     
     Args:
         database (str): Path to the Monte Carlo database.
@@ -201,6 +204,29 @@ def populate_stats(database: str, sim_id: int):
         placeholders = ', '.join(['?'] * (1 + len(input_stat_data.values())))
         row = [sim_id] + [val for val in input_stat_data.values()]
         cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
+
+        # Populate AdjustmentStats table
+        print("Now populating AdjustmentStats table...")
+        adjustment_stat_data = {}
+        for stat in adjustment_stat_cols:
+            if "AVG" in stat:
+                var = stat.replace("AVG_", "")
+                cur.execute(f"SELECT AVG({var}) FROM Adjustments")
+                input_stat_data[stat] = round(cur.fetchone()[0], 3)
+            elif "StDev" in stat:
+                var = stat.replace("StDev_", "")
+                cur.execute(f"SELECT {var} FROM Results")
+                values = [row[0] for row in cur.fetchall() if row[0] is not None]
+                if len(values) > 1:
+                    stdev = round(statistics.stdev(values), 3)
+                else:
+                    stdev = None
+                input_stat_data[stat] = stdev
+        
+        placeholders = ', '.join(['?'] * (1 + len(adjustment_stat_data.values())))
+        row = [sim_id] + [val for val in adjustment_stat_data.values()]
+        cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
+        
 
         # Populate ResultStats table
         print("Now populating ResultStats table...")

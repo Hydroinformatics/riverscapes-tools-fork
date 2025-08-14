@@ -44,32 +44,65 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
+    '''
+    for var in input_cols:
+        var_distributions(database, out_dir, var, "Inputs")
+    for var in adjustment_cols:
+        var_distributions(database, out_dir, var, "Adjustments")
+    '''
+    for var in adjustment_cols:
+        var_capacity_scatters(database, out_dir, var)
+        var_capacity_scatters_conditional(database, out_dir, var, std_tolerance=0.5)
+
+    calculate_morris_effects(database, out_dir)
     
+    '''
     # Create tornado diagram
     tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
-    # Compare multiple methods
-    # compare_sensitivity_methods(analysis_data)
+    tornado_results = create_tornado_diagram(database, method='regression', out_dir=out_dir)
+    tornado_results = create_tornado_diagram(database, method='standardized', out_dir=out_dir)
+    # # Compare multiple methods
+    compare_sensitivity_methods(database)
 
-    # Access detailed results
+    # # Access detailed results
     print("Most sensitive parameter:", tornado_results['summary_table'].iloc[0]['Parameter'])
     print("Sensitivity value:", tornado_results['summary_table'].iloc[0]['Sensitivity'])
+    '''
     
     # OLD ANALYSIS.PY
-    input_distributions(database, out_dir)
-    # output_distribution(database, out_dir)
     # capacity_scatter_plots(database, out_dir)
     # capacity_scatter_plots_zoomed(database, out_dir)
-    # hydro_limitation(database, out_dir)
+    # hydro_limitation(database, out_dir)     # TODO
     # capacity_bar_plots(database, out_dir)
     
     print("Analysis complete.")
 
 
+# USEFUL DICTIONARIES used by multiple functions
+
+input_cols = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPLow', 'iHyd_SP2', 'iGeo_Slope']
+
+adjustment_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift',
+                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift']
+
+adjustment_labels = {
+    'Veg30_Scale': 'Scale Veg30 (30m Suitability)',
+    'Veg100_Scale': 'Scale Veg100 (100m Suitability)', 
+    'SPLow_Scale': 'Scale SPLow (Baseflow)',
+    'SPLow_Shift': 'Shift SPLow (Baseflow)',
+    'SP2_Scale': 'Scale SP2 (Peak Flow)',
+    'SP2_Shift': 'Shift SP2 (Peak Flow)',
+    'Slope_Scale': 'Scale Slope',
+    'Slope_Shift': 'Shift Slope'
+}
+
+
 # Modular analysis functions
-def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlation', 
+def create_tornado_diagram(database: str, output_col='AVG_oCC_EX', method='correlation', 
                          title=None, figsize=(10, 8), out_dir=None):
     """
     Create tornado diagram showing parameter sensitivity for Monte Carlo results.
+    Claude AI was used to write much of this function.
     
     Parameters:
     -----------
@@ -92,37 +125,13 @@ def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlatio
         Dictionary with sensitivity metrics and statistics
     """
     
-    # Define parameter names and create clean labels
-    param_columns = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift',
-                     'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift']
-    
-    param_labels = {
-        'Veg30_Scale': '30m Vegetation\nSuitability Scale',
-        'Veg100_Scale': '100m Vegetation\nSuitability Scale', 
-        'SPLow_Scale': 'Baseflow Stream\nPower Scale',
-        'SPLow_Shift': 'Baseflow Stream\nPower Shift',
-        'SP2_Scale': 'Peak Flow Stream\nPower Scale',
-        'SP2_Shift': 'Peak Flow Stream\nPower Shift',
-        'Slope_Scale': 'Slope Scale',
-        'Slope_Shift': 'Slope Shift'
-    }
-    
-    # Extract data from database
-    results_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift', 
-                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift',
-                    'AVG_oVC_EX', 'StDev_oVC_EX', 'AVG_oCC_EX', 'StDev_oVC_EX']
-    with sqlite3.connect(database) as conn:
-        cur = conn.cursor()
-        cur.execute(f"SELECT {', '.join(results_cols)} FROM ResultStats")
-        results = cur.fetchall()
-        results_data = pd.DataFrame(results, columns=results_cols)
-        print(results_data)
+    results_data = get_results_data(database)
         
     # Calculate sensitivity metrics
     sensitivity_metrics = {}
     p_values = {}
     
-    for param in param_columns:
+    for param in adjustment_cols:
         if param not in results_data.columns:
             print(f"Warning: {param} not found in data")
             continue
@@ -182,7 +191,7 @@ def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlatio
                           key=lambda x: abs(sensitivity_metrics[x]), reverse=False)
     
     # Prepare data for plotting
-    param_names = [param_labels[p] for p in sorted_params]
+    param_names = [adjustment_labels[p] for p in sorted_params]
     sensitivities = [sensitivity_metrics[p] for p in sorted_params]
     p_vals = [p_values[p] for p in sorted_params]
     
@@ -264,7 +273,7 @@ def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlatio
     
     if out_dir is not None:
         print(f"...Saving tornado plot...")
-        out_file_path = os.path.join(out_dir, "mc-tornado.png")
+        out_file_path = os.path.join(out_dir, f"tornado-{method}.png")
         plt.savefig(out_file_path)
         plt.close()
     else:
@@ -272,7 +281,7 @@ def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlatio
     
     # Create summary table
     summary_df = pd.DataFrame({
-        'Parameter': [param_labels[p] for p in sorted_params],
+        'Parameter': [adjustment_labels[p] for p in sorted_params],
         'Sensitivity': sensitivities,
         'P_value': p_vals,
         'Rank': range(1, len(sorted_params) + 1),
@@ -294,7 +303,8 @@ def create_tornado_diagram(database, output_col='AVG_oCC_EX', method='correlatio
     return results
 
 
-def compare_sensitivity_methods(results_data, output_col='oCC', figsize=(15, 6)):
+        # TODO — BROKEN - plotting is bugged
+def compare_sensitivity_methods(database, output_col='AVG_oCC_EX', figsize=(15, 6)):
     """
     Compare tornado diagrams using different sensitivity methods side by side.
     """
@@ -305,7 +315,7 @@ def compare_sensitivity_methods(results_data, output_col='oCC', figsize=(15, 6))
     
     for i, (method, method_title) in enumerate(zip(methods, method_titles)):
         plt.sca(axes[i])
-        results = create_tornado_diagram(results_data, output_col=output_col, 
+        results = create_tornado_diagram(database, output_col=output_col, 
                                        method=method, title=method_title,
                                        figsize=(5, 6))
         if i > 0:
@@ -317,6 +327,170 @@ def compare_sensitivity_methods(results_data, output_col='oCC', figsize=(15, 6))
     return None
 
     
+# HELPER function
+def get_results_data(database: str, table: str = "ResultStats"):
+    """
+    Return data from a table in monte carlo database as a DataFrame
+    """
+    results_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift', 
+                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift',
+                    'AVG_oVC_EX', 'StDev_oVC_EX', 'AVG_oCC_EX', 'StDev_oVC_EX']
+    
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT {', '.join(results_cols)} FROM {table}")
+        results = cur.fetchall()
+        results_data = pd.DataFrame(results, columns=results_cols)
+
+    return results_data
+
+
+def var_capacity_scatters(database: str, out_dir: str, var: str, table: str = "ResultStats"):
+    """
+    Standard scatter plot of a variable against oCC_EX
+    """
+    var_data = select_var(database, var, table)
+    cap_data = select_var(database, "AVG_oCC_EX", table)
+    # seaborn scatter
+    sns.regplot(x=var_data, y=cap_data, marker='.')
+    plt.title(f"{var} Impact on Capacity")
+    plt.xlabel(var)
+    plt.ylabel("Mean oCC_EX for Input Reaches")
+    # add r2 value
+    r, p = stats.pearsonr(var_data, cap_data)
+    ax = plt.gca()
+    ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+            transform=ax.transAxes)
+    
+    if out_dir is not None:
+        print(f"...Saving {var} scatter...")
+        out_file_path = os.path.join(out_dir, f"{var}-scatter.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+        
+def var_capacity_scatters_conditional(database: str, out_dir: str, var: str, std_tolerance=0.5):
+    """
+    Use standard deviation-based tolerance for each parameter type
+    tolerance_std: how many standard deviations away from center
+    """
+    other_params = [col for col in adjustment_cols if col != var]
+    
+    # get data
+    data = get_results_data(database)
+    
+    # Get stdev of all adjustment distributions
+    stdevs = {}
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT Adjustment, Parameters FROM AdjustmentDistributions")
+        results = cur.fetchall()
+        for row in results:
+            params = row[1].split(", ")
+            stdevs[row[0]] = float(params[1])  # stdev is second param for normals
+    print(stdevs)
+    
+    # Define tolerance based on parameter type and its std dev
+    param_tolerances = {}
+    for param in other_params:
+        if 'Scale' in param: # expect: mean=1.0, stdev=0.75
+            center = 1.0
+            tolerance = std_tolerance * stdevs[param]
+        elif 'SPLow' in param and 'Shift' in param: # expect: mean=0, stdev=18.5
+            center = 0.0
+            tolerance = std_tolerance * stdevs[param]
+        elif 'SP2' in param and 'Shift' in param: # expect: mean=0, stdev=200
+            center = 0.0
+            tolerance = std_tolerance * stdevs[param]
+        elif 'Slope' in param and 'Shift' in param: # expect: mean=0, stdev=0.02
+            center = 0.0
+            tolerance = std_tolerance * stdevs[param]
+        
+        param_tolerances[param] = (center, tolerance)
+    
+    # Apply filters
+    mask = True
+    for param in other_params:
+        center, tolerance = param_tolerances[param]
+        mask = mask & (abs(data[param] - center) <= tolerance)
+    
+    filtered_data = data[mask]
+    
+    print(f"\nConditional Analysis for {var}:")
+    print(f"Tolerance: {var} standard deviations")
+    print(f"Retained {len(filtered_data)} simulations out of {len(data)} ({100*len(filtered_data)/len(data):.1f}%)")
+    
+    # Show tolerance values used
+    print("Parameter tolerances used:")
+    for param, (center, tol) in param_tolerances.items():
+        print(f"  {param}: {center:.3f} ± {tol:.3f}")
+    
+    # seaborn scatter
+    sns.regplot(x=filtered_data[var], y=filtered_data["AVG_oCC_EX"], marker='o')
+    plt.title(f"{var} Impact on Capacity (Conditional Scatter)")
+    plt.xlabel(var)
+    plt.ylabel("Mean oCC_EX for Input Reaches")
+    # add r2 value
+    r, p = stats.pearsonr(filtered_data[var], filtered_data["AVG_oCC_EX"])
+    ax = plt.gca()
+    ax.text(.05, .8, 'r={:.2f}, p={:.2g}'.format(r, p),
+            transform=ax.transAxes)
+    
+    if out_dir is not None:
+        print(f"...Saving {var} conditional scatter...")
+        out_file_path = os.path.join(out_dir, f"{var}-scatter-conditional.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+def calculate_morris_effects(database: str, out_dir: str, percentile=10):
+    """
+    Calculate Morris elementary effects - changes in output for unit changes in input
+    This handles the confounding variable problem naturally
+    """
+    data = get_results_data(database)
+    elementary_effects = {param: [] for param in adjustment_cols}
+    
+    for param in adjustment_cols:
+        # Find pairs of simulations that differ mainly in this parameter
+        param_values = data[param].values
+        output_values = data["AVG_oCC_EX"].values
+        
+        # Sort by parameter value
+        sort_idx = np.argsort(param_values)
+        sorted_param = param_values[sort_idx]
+        sorted_output = output_values[sort_idx]
+        
+        # Calculate finite differences
+        for i in range(len(sorted_param) - 1):
+            delta_param = sorted_param[i+1] - sorted_param[i]
+            delta_output = sorted_output[i+1] - sorted_output[i]
+            
+            if abs(delta_param) > 1e-6:  # Avoid division by zero
+                elementary_effect = delta_output / delta_param
+                elementary_effects[param].append(elementary_effect)
+    
+    # Calculate statistics
+    morris_stats = {}
+    for param in adjustment_cols:
+        effects = elementary_effects[param]
+        if effects:
+            morris_stats[param] = {
+                'mean': np.mean(effects),
+                'std': np.std(effects),
+                'mean_abs': np.mean(np.abs(effects))
+            }
+    
+    print("==== Morris Elementary Effects: ====")
+    for key, val in morris_stats.items():
+        print(f"{key} = {val}")
+    
+    return morris_stats, elementary_effects
+
+
 def analyze_parameter_effects(data, param_name, output_name='oCC'):
     """
     Comprehensive analysis of single parameter effect
@@ -338,184 +512,39 @@ def compare_fis_pathways(data):
 
 # OLD ANALYSIS.PY
 
-def input_distributions(database, out_dir):
+def var_distributions(database, out_dir, var, table, num_bins=50, kde_switch=False):
     """
     Generate histograms of the distribution of relevant input variables. Options to filter.
     :param database: path to a BRAT database (.gpkg)
     :param out_dir: optional path to a folder to save plots to
     """
-    x_vars = [
-        # ('var name', 'description', num_bins, log_scale, cutoff_val)
-        # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
-        ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
-        ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 30),
-        ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 2200),
-        ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
-    ]
+    # x_vars = [
+    #     # ('var name', 'description', num_bins, log_scale, cutoff_val)
+    #     # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
+    #     ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
+    #     ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
+    #     ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 30),
+    #     ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 2200),
+    #     ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
+    # ]
+    
 
-    kde_switch = False
+    var_data = select_var(database, var, table)
 
-    for var, descr, num_bins, log, cutoff_val in x_vars:
-        var_data = select_var(database, var, "Inputs")
+    # plot raw data
+    sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
+    plt.xlabel(var)
+    plt.ylabel('Count')
+    plt.title(f"Distribution of {var} in Siletz Watershed")
+    print(f"...{num_bins}-bin histogram for {var} generated...")
 
-        # plot raw data
-        sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
-        plt.xlabel(descr)
-        plt.ylabel('Count')
-        plt.title("Distribution of {} in Siletz Watershed".format(var))
-        print("...{}-bin histogram for {} generated...".format(num_bins, var))
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "input-distribution-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-        # also generate an additional log-scale histogram if requested
-        if log:
-            print(f"Log-scale histogram also requested for {var}. Plotting...")
-            sns.histplot(data=var_data, bins=num_bins, kde=kde_switch, log_scale=log)
-            plt.xlabel(descr)
-            plt.ylabel('Count')
-            plt.title("Log-Scale Distribution of {} in Siletz Watershed".format(var))
-
-            if out_dir is not None:
-                print("...Saving {}-bin log-scale histogram for {}...".format(num_bins, var))
-                out_file_path = os.path.join(out_dir, "input-distribution-{}-log.png".format(var))
-                plt.savefig(out_file_path)
-                plt.close()
-            else:
-                plt.show()
-
-        # also generate an additional cut-off histogram if requested
-        if cutoff_val:
-            filtered_var_data = [val for val in var_data if val <= cutoff_val]
-            print(f"Cut-off at {cutoff_val} histogram also requested for {var}. Plotting...")
-            sns.histplot(data=filtered_var_data, bins=num_bins, kde=kde_switch)
-            plt.xlabel(descr)
-            plt.ylabel('Count')
-            plt.title("Filtered Distribution of {} in Siletz Watershed".format(var))
-
-            if out_dir is not None:
-                print("...Saving {}-bin cut-off histogram for {}...".format(num_bins, var))
-                out_file_path = os.path.join(out_dir, "input-distribution-{}-zoomed.png".format(var))
-                plt.savefig(out_file_path)
-                plt.close()
-            else:
-                plt.show()
-
-
-def output_distribution(database, out_dir):
-    """
-    Generate two histograms of the dam capacities, one with few bins and one with many
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-
-    histogram_bin_counts = [4, 12, 24, 50]
-    capacity_data = select_var(database, 'oCC_EX')
-
-    for num_bins in histogram_bin_counts:
-        plt.hist(capacity_data, bins=num_bins, edgecolor='black')
-        plt.xlabel('oCC_EX')
-        plt.ylabel("Count")
-        plt.title("Overall Dam Capacity (oCC_EX) {}-bin Histogram".format(num_bins))
-        print("...{}-bin histogram for oCC_EX generated...".format(num_bins))
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "output-distribution-{}bin.png".format(num_bins))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-
-
-def capacity_scatter_plots(database, out_dir):
-    """
-    Generate scatters of oCC_EX vs. continuous variables
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-
-    # Variables of interest from ReachAttributes. Can easily be modified.
-    x_vars = {
-        'oVC_EX': 'Existing Veg FIS Score',
-        'iVeg100EX': 'Existing Veg Suitability (100m buffer)',
-        'iVeg_30EX': 'Existing Veg Suitability (30m buffer)',
-        'iGeo_Slope': 'Stream Slope',
-        'iGeo_DA': 'Upstream Drainage Area (sq km)',
-        'iHyd_SPLow': 'Baseflow Stream Power (watts)',
-        'iHyd_SP2': 'Peak Flow Stream Power (watts)'
-    }
-
-    # Get dam capacity outputs
-    capacity_data = select_var(database, 'oCC_EX')
-
-    # Get each variable, create scatter
-    for var, descr in x_vars.items():
-        var_data = select_var(database, var)
-        
-        # generate a plot
-        plt.scatter(var_data, capacity_data, s=0.75, marker='.')
-        plt.xlabel(var)
-        plt.ylabel("Overall Dam Capacity (oCC_EX)")
-        plt.title(f"{descr} vs. Dam Capacity")
-        print(f"...Plot for {var} generated...")
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "scatter-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-
-def capacity_scatter_plots_zoomed(database, out_dir):
-    """
-    Generate "zoomed-in" scatters of oCC_EX and certain continuous variables with log-scale x-axis
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-
-    # Variables of interest from ReachAttributes. Can easily be modified.
-    x_vars = {
-        # variable name: ('description', x-cutoff scalar)
-        'iHyd_SPLow': ('Baseflow Stream Power (watts)', 0.025),
-        'iHyd_SP2': ('Peak Flow Stream Power (watts)', 0.025),
-        'iGeo_Slope': ('Stream Slope', 0.20)
-    }
-
-    # Get dam capacity outputs
-    capacity_data = select_var(database, 'oCC_EX')
-
-    # Get each variable, create zoomed-in scatter
-    for var, info in x_vars.items():
-        var_data = select_var(database, var)
-        pairs = dict(zip(var_data, capacity_data))
-
-        x_cutoff = (max(var_data) * info[1])   # view the first quarter of the x-axis
-        filtered_pairs = {x: y for x, y in pairs.items() if x < x_cutoff}
-        print(f"...generating zoomed-in plot for {var} with x cutoff = {x_cutoff}...")
-        
-        plt.scatter(filtered_pairs.keys(), filtered_pairs.values(), s=0.75, marker='.')
-        plt.xlabel(var)
-        plt.ylabel("Overall Dam Capacity (oCC_EX)")
-        plt.title(f"[subset] {info[0]} vs. Dam Capacity")
-        print(f"...Plot for {var} generated...")
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "scatter-{}-zoomed.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, f"distribution-{var}.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
 
 
 
@@ -675,18 +704,19 @@ def hydro_limitation(database, out_dir):
     
 
 
-def select_var(database: str, var: str, table: str = "ReachAttributes"):
+def select_var(database: str, var: str, table: str = "ReachAttributes", where: str = None):
     """
     Utility function to return column of values for a specified feature from a specified table
     :param database: path to a BRAT database (.gpkg)
     :param var: database name of the feature to be returned"""
-
-    conn = sqlite3.connect(database)
-    curs = conn.cursor()
-    curs.execute(f'SELECT {var} FROM {table}')
-    result = curs.fetchall()
-    var_data = [row[0] for row in result]   # convert to ints from tuples
-    curs.close()
+    with sqlite3.connect(database) as conn:
+        curs = conn.cursor()
+        stmt = f"SELECT {var} FROM {table}"
+        if where is not None:
+            stmt += f" WHERE {where}"
+        curs.execute(stmt)
+        result = curs.fetchall()
+        var_data = [row[0] for row in result]   # convert to ints from tuples
 
     print("Obtained {} {} values from database...".format(len(var_data), var))
     return var_data
