@@ -75,9 +75,9 @@ adjustments = [
     "SP2_Shift", "SP2_Scale", "Slope_Shift", "Slope_Scale"
 ]
 
-input_stat_cols = ["AVG_iVeg_30EX", "AVG_iVeg100EX", "AVG_iHyd_SPLow", "AVG_iHyd_SP2", "AVG_iGeo_Slope", "AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
-adjustment_stat_cols = [f"AVG_{adj}" for adj in adjustments] + [f"StDev_{adj}" for adj in adjustments]
 result_stat_cols = ["AVG_oVC_EX", "StDev_oVC_EX", "AVG_oCC_EX", "StDev_oCC_EX"]
+input_stat_cols = [f"AVG_{var}" for var in input_vars] + [f"StDev_{var}" for var in input_vars] + result_stat_cols
+adjustment_stat_cols = [f"AVG_{adj}" for adj in adjustments] + [f"StDev_{adj}" for adj in adjustments]
 
 
 # -- HELPER FUNCTIONS -- 
