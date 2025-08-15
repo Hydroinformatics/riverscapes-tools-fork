@@ -295,32 +295,39 @@ def hydro_limitation(database, table, out_dir):
     print("Generating color-coded scatters:")
     for var, var_cat_list in categories.items():
         var_data = select_var(database, var, table)
-        # var_cats = [None] * len(var_data)
-        colors = []
+        var_cats = [None] * len(var_data)
+        # colors = []
 
         # for each hydro value, color it based on its category
         for i in range(len(oCC_EX)):
             for cat in var_cat_list:
                 categorized = False
-                label = cat['label']
                 min_val = cat['min'] if 'min' in cat else None
                 max_val = cat['max'] if 'max' in cat else None
                 if (min_val is None or var_data[i] >= min_val) and (max_val is None or var_data[i] < max_val):
-                    # var_cats[i] = label
-                    colors.append(cat['color'])
+                    var_cats[i] = cat['label']
+                    # colors.append(cat['color'])
                     categorized = True
                     break
             if not categorized:     # assign last category if logic failed
-                # var_cats[i] = cat['label']
-                colors.append(cat['color'])
+                var_cats[i] = cat['label']
+                # colors.append(cat['color'])
 
-        data = pd.DataFrame(zip(oVC_EX, oCC_EX, var_data), columns=['oVC', 'oCC', 'category'])
+        data = pd.DataFrame(zip(oVC_EX, oCC_EX, var_cats), columns=['oVC', 'oCC', 'category'])
         
         # generate a plot
-        plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=colors, alpha=0.5)
-        # sns.scatterplot(data=data, x='oVC', y='oCC', hue='category', style='category', marker=',', alpha=0.5)
-        # plt.plot([0, 40], [0, 40], color='black', linestyle='--', label='1:1 line', alpha=0.67)     # add y=x line
-        plt.legend(title=f'{var} Categories')
+        # plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=var_cats, alpha=0.5)
+        hue_order = [cat['label'] for cat in var_cat_list]
+        palette = sns.color_palette("muted")
+        custom_palette = [palette[9], palette[2], palette[1], palette[3]]
+        
+        plt.figure(figsize=(8,8))
+        sns.scatterplot(data=data, x='oVC', y='oCC', hue='category', hue_order=hue_order,
+                        s=15, edgecolor='none', marker='.', alpha=0.6, palette=custom_palette)
+        plt.grid(True, alpha=0.1)
+        plt.legend(title=f'{var} Categories', markerscale=3, 
+               handler_map={plt.Line2D: HandlerLine2D(update_func=change_alpha)})
+        # plt.plot([0, 40], [0, 40], color='black', linestyle='--', label='1:1 line', alpha=0.33)     # add y=x line
         plt.xlabel('oVC_EX (Veg FIS Capacity)')
         plt.ylabel("oCC_EX (Overall FIS Capacity)")
         plt.title(f"Veg Capacity vs. Overall Capacity - {var}")
@@ -329,11 +336,11 @@ def hydro_limitation(database, table, out_dir):
         if out_dir is not None:
             print(f"...Saving plot to output dir...")
             out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
-            plt.savefig(out_file_path)
+            plt.savefig(out_file_path, dpi=600)
             plt.close()
         else:
             plt.show()
-            
+   
     # Generate summary oVC vs. oCC scatter, color-coded by most limiting factor
     print("Generating summary scatter:")
     
@@ -364,9 +371,10 @@ def hydro_limitation(database, table, out_dir):
     
     # generate a plot
     hue_order = ['None'] + [cat for cat in data['limitation'].unique() if cat != 'None']
-    scatter = sns.scatterplot(data=data, x='oVC', y='oCC', hue='limitation',
-                    hue_order=hue_order, s=4, edgecolor='none', alpha=0.4)
-    plt.grid(True, alpha=0.2)
+    plt.figure(figsize=(8,8))
+    sns.scatterplot(data=data, x='oVC', y='oCC', hue='limitation',
+                    hue_order=hue_order, s=5, edgecolor='none', alpha=0.6)
+    plt.grid(True, alpha=0.1)
     plt.legend(title=f'Most Limiting Variable(s)', markerscale=3, 
                handler_map={plt.Line2D: HandlerLine2D(update_func=change_alpha)})
     # make legend colors opaque
@@ -377,8 +385,8 @@ def hydro_limitation(database, table, out_dir):
 
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
-        plt.savefig(out_file_path)
+        out_file_path = os.path.join(out_dir, "hydro-limit-summary.png")
+        plt.savefig(out_file_path, dpi=600)
         plt.close()
     else:
         plt.show()
