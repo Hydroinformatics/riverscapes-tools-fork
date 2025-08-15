@@ -44,28 +44,28 @@ def analyze(database, out_dir):
 
     # > Call analysis functions. Can turn these on or off
     
-    # diagnositcs(database)
+    diagnositcs(database)
     
-    # for var in input_cols:
-    #     var_distributions(database, out_dir, var, "Inputs")
-    # for var in adjustment_cols:
-    #     var_distributions(database, out_dir, var, "Adjustments")
+    for var in input_cols:
+        var_distributions(database, out_dir, var, "Inputs")
+    for var in adjustment_cols:
+        var_distributions(database, out_dir, var, "Adjustments")
 
-    # for var in adjustment_cols:
-    #     var_capacity_scatters(database, out_dir, var)
-    #     var_capacity_scatters_conditional(database, out_dir, var, std_tolerance=0.5)
+    for var in adjustment_cols:
+        var_capacity_scatters(database, out_dir, var)
+        # var_capacity_scatters_conditional(database, out_dir, var, std_tolerance=0.5)
 
-    # calculate_morris_effects(database, out_dir)
+    calculate_morris_effects(database, out_dir)
     
-    # corr_tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
-    # print("Most sensitive parameter:", corr_tornado_results['summary_table'].iloc[0]['Parameter'])
-    # print("Sensitivity value:", corr_tornado_results['summary_table'].iloc[0]['Sensitivity'])
+    corr_tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
+    print("Most sensitive parameter:", corr_tornado_results['summary_table'].iloc[0]['Parameter'])
+    print("Sensitivity value:", corr_tornado_results['summary_table'].iloc[0]['Sensitivity'])
     
-    # veg_hydro_sensitivity_comp(database, out_dir, corr_tornado_results)
+    veg_hydro_sensitivity_comp(database, out_dir, corr_tornado_results)
     
-    # variance_decompisition(database, out_dir)
+    variance_decompisition(database, out_dir)
     
-    check_veg_input_corr(database)
+    # check_veg_input_corr(database)
     
     # OLD ANALYSIS.PY
     # capacity_scatter_plots(database, out_dir)

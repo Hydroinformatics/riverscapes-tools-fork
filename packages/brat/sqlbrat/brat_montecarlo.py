@@ -63,11 +63,11 @@ adjustment_dist = {
     'SPLow_Shift': ('truncnorm', [0.0, 18.5, -135, 135]),
     'SP2_Shift': ('truncnorm', [0.0, 200, -900, 900]),
     'Slope_Shift': ('truncnorm', [0.0, 0.02, -0.10, 0.10]),
-    'Veg30_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
-    'Veg100_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
-    'SPLow_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
-    'SP2_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
-    'Slope_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5])
+    'Veg30_Scale': ('truncnorm', [1.0, 0.15, 0.5, 1.5]),
+    'Veg100_Scale': ('truncnorm', [1.0, 0.15, 0.5, 1.5]),
+    'SPLow_Scale': ('truncnorm', [1.0, 0.15, 0.5, 1.5]),
+    'SP2_Scale': ('truncnorm', [1.0, 0.15, 0.5, 1.5]),
+    'Slope_Scale': ('truncnorm', [1.0, 0.15, 0.5, 1.5])
 }
 
 adjustments = [
