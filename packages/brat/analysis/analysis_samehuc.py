@@ -47,11 +47,11 @@ def analyze(database, out_dir):
 
     # > Call analysis functions. Can turn these on or off
 
-    # capacity_means_box_whisker(database, out_dir)
+    capacity_means_box_whisker(database, out_dir)
     # capacity_categories_stacked_bar(database, out_dir)
     # capacity_means_line(database, out_dir)        # NOT MADE
     # capacity_by_adjustment_pointplot(database, out_dir)
-    capacity_by_adjustment_scatter(database, out_dir)
+    # capacity_by_adjustment_scatter(database, out_dir)
 
 
     print("Analysis complete.")
@@ -131,15 +131,17 @@ def capacity_means_box_whisker(database, out_dir):
         print(data)
     
     # now construct the plot
-    ax = sns.boxplot(data, whis=(0,100))
+    plt.figure(figsize=(16,8))
+    sns.boxplot(data, whis=(0,100))
     plt.xticks(rotation=45)
     plt.ylabel("Mean Overall Dam Capacity (dams/km)")
     plt.title("BRAT Capacity Outputs Under Different FIS Adjustments")
+    # plt.ylim(0, 15)
 
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
         out_file_path = os.path.join(out_dir, "fis-capacity-box.png")
-        plt.savefig(out_file_path)
+        plt.savefig(out_file_path, dpi=600)
         plt.close()
     else:
         plt.show()

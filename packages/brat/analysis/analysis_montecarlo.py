@@ -328,7 +328,7 @@ def create_tornado_diagram(database: str, output_col='AVG_oCC_EX', method='corre
     if out_dir is not None:
         print(f"...Saving tornado plot...")
         out_file_path = os.path.join(out_dir, f"tornado-{method}.png")
-        plt.savefig(out_file_path)
+        plt.savefig(out_file_path, dpi=600)
         plt.close()
     else:
         plt.show()
