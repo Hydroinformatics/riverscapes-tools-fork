@@ -63,11 +63,11 @@ adjustment_dist = {
     'SPLow_Shift': ('truncnorm', [0.0, 18.5, -135, 135]),
     'SP2_Shift': ('truncnorm', [0.0, 200, -900, 900]),
     'Slope_Shift': ('truncnorm', [0.0, 0.02, -0.10, 0.10]),
-    'Veg30_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
-    'Veg100_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
-    'SPLow_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
-    'SP2_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0]),
-    'Slope_Scale': ('truncnorm', [1.0, 0.75, 0.5, 2.0])
+    'Veg30_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
+    'Veg100_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
+    'SPLow_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
+    'SP2_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5]),
+    'Slope_Scale': ('truncnorm', [1.0, 0.25, 0.5, 1.5])
 }
 
 adjustments = [
@@ -212,7 +212,7 @@ def populate_stats(database: str, sim_id: int):
             if "AVG" in stat:
                 var = stat.replace("AVG_", "")
                 cur.execute(f"SELECT AVG({var}) FROM Adjustments")
-                input_stat_data[stat] = round(cur.fetchone()[0], 3)
+                adjustment_stat_data[stat] = round(cur.fetchone()[0], 3)
             elif "StDev" in stat:
                 var = stat.replace("StDev_", "")
                 cur.execute(f"SELECT {var} FROM Results")
@@ -221,11 +221,11 @@ def populate_stats(database: str, sim_id: int):
                     stdev = round(statistics.stdev(values), 3)
                 else:
                     stdev = None
-                input_stat_data[stat] = stdev
+                adjustment_stat_data[stat] = stdev
         
         placeholders = ', '.join(['?'] * (1 + len(adjustment_stat_data.values())))
         row = [sim_id] + [val for val in adjustment_stat_data.values()]
-        cur.execute(f"INSERT INTO InputStats VALUES ({placeholders})", row)
+        cur.execute(f"INSERT INTO AdjustmentStats VALUES ({placeholders})", row)
         
 
         # Populate ResultStats table
