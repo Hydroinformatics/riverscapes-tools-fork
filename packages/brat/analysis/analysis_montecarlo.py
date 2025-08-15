@@ -29,8 +29,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
-
-# import analysis
+from sklearn.metrics import r2_score
 
 
 def analyze(database, out_dir):
@@ -44,35 +43,33 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
-    '''
-    for var in input_cols:
-        var_distributions(database, out_dir, var, "Inputs")
-    for var in adjustment_cols:
-        var_distributions(database, out_dir, var, "Adjustments")
-    '''
-    for var in adjustment_cols:
-        var_capacity_scatters(database, out_dir, var)
-        var_capacity_scatters_conditional(database, out_dir, var, std_tolerance=0.5)
-
-    calculate_morris_effects(database, out_dir)
     
-    '''
-    # Create tornado diagram
-    tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
-    tornado_results = create_tornado_diagram(database, method='regression', out_dir=out_dir)
-    tornado_results = create_tornado_diagram(database, method='standardized', out_dir=out_dir)
-    # # Compare multiple methods
-    compare_sensitivity_methods(database)
+    # diagnositcs(database)
+    
+    # for var in input_cols:
+    #     var_distributions(database, out_dir, var, "Inputs")
+    # for var in adjustment_cols:
+    #     var_distributions(database, out_dir, var, "Adjustments")
 
-    # # Access detailed results
-    print("Most sensitive parameter:", tornado_results['summary_table'].iloc[0]['Parameter'])
-    print("Sensitivity value:", tornado_results['summary_table'].iloc[0]['Sensitivity'])
-    '''
+    # for var in adjustment_cols:
+    #     var_capacity_scatters(database, out_dir, var)
+    #     var_capacity_scatters_conditional(database, out_dir, var, std_tolerance=0.5)
+
+    # calculate_morris_effects(database, out_dir)
+    
+    # corr_tornado_results = create_tornado_diagram(database, method='correlation', out_dir=out_dir)
+    # print("Most sensitive parameter:", corr_tornado_results['summary_table'].iloc[0]['Parameter'])
+    # print("Sensitivity value:", corr_tornado_results['summary_table'].iloc[0]['Sensitivity'])
+    
+    # veg_hydro_sensitivity_comp(database, out_dir, corr_tornado_results)
+    
+    # variance_decompisition(database, out_dir)
+    
+    check_veg_input_corr(database)
     
     # OLD ANALYSIS.PY
     # capacity_scatter_plots(database, out_dir)
     # capacity_scatter_plots_zoomed(database, out_dir)
-    # hydro_limitation(database, out_dir)     # TODO
     # capacity_bar_plots(database, out_dir)
     
     print("Analysis complete.")
@@ -84,6 +81,9 @@ input_cols = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPLow', 'iHyd_SP2', 'iGeo_Slope']
 
 adjustment_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift',
                     'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift']
+
+veg_adjustments = [col for col in adjustment_cols if 'Veg' in col]
+hydro_adjustments = [col for col in adjustment_cols if 'SP' in col or 'Slope' in col]
 
 adjustment_labels = {
     'Veg30_Scale': 'Scale Veg30 (30m Suitability)',
@@ -98,6 +98,60 @@ adjustment_labels = {
 
 
 # Modular analysis functions
+
+def diagnositcs(database):
+    # Compare parameter ranges and output responses
+
+    print("Parameter Ranges and Output Responses:")
+    print("=" * 50)
+    
+    data = get_results_data(database)
+
+    for param in adjustment_cols:
+        param_range = data[param].max() - data[param].min()
+        param_std = data[param].std()
+        
+        # Calculate output range when this parameter varies
+        sorted_data = data.sort_values(param)
+        bottom_10pct = sorted_data.head(int(len(data)*0.1))['AVG_oCC_EX'].mean()
+        top_10pct = sorted_data.tail(int(len(data)*0.1))['AVG_oCC_EX'].mean()
+        output_response = abs(top_10pct - bottom_10pct)
+        
+        # Standardized sensitivity calculation
+        standardized_sens = output_response / param_range if param_range > 0 else 0
+        
+        print(f"{param}:")
+        print(f"  Parameter range: {param_range:.4f} (std: {param_std:.4f})")
+        print(f"  Output response: {output_response:.4f}")
+        print(f"  Standardized sensitivity: {standardized_sens:.4f}")
+        print()
+
+
+def var_distributions(database, out_dir, var, table, num_bins=50, kde_switch=False):
+    """
+    Generate histograms of the distribution of relevant input variables. Options to filter.
+    :param database: path to a BRAT database (.gpkg)
+    :param out_dir: optional path to a folder to save plots to
+    """
+    
+    var_data = select_var(database, var, table)
+
+    # plot raw data
+    sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
+    plt.xlabel(var)
+    plt.ylabel('Count')
+    plt.title(f"Distribution of {var} in Siletz Watershed")
+    print(f"...{num_bins}-bin histogram for {var} generated...")
+
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, f"distribution-{var}.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+
 def create_tornado_diagram(database: str, output_col='AVG_oCC_EX', method='correlation', 
                          title=None, figsize=(10, 8), out_dir=None):
     """
@@ -304,6 +358,8 @@ def create_tornado_diagram(database: str, output_col='AVG_oCC_EX', method='corre
 
 
         # TODO — BROKEN - plotting is bugged
+
+'''
 def compare_sensitivity_methods(database, output_col='AVG_oCC_EX', figsize=(15, 6)):
     """
     Compare tornado diagrams using different sensitivity methods side by side.
@@ -325,24 +381,7 @@ def compare_sensitivity_methods(database, output_col='AVG_oCC_EX', figsize=(15, 
     plt.show()
     
     return None
-
-    
-# HELPER function
-def get_results_data(database: str, table: str = "ResultStats"):
-    """
-    Return data from a table in monte carlo database as a DataFrame
-    """
-    results_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift', 
-                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift',
-                    'AVG_oVC_EX', 'StDev_oVC_EX', 'AVG_oCC_EX', 'StDev_oVC_EX']
-    
-    with sqlite3.connect(database) as conn:
-        cur = conn.cursor()
-        cur.execute(f"SELECT {', '.join(results_cols)} FROM {table}")
-        results = cur.fetchall()
-        results_data = pd.DataFrame(results, columns=results_cols)
-
-    return results_data
+'''
 
 
 def var_capacity_scatters(database: str, out_dir: str, var: str, table: str = "ResultStats"):
@@ -369,7 +408,8 @@ def var_capacity_scatters(database: str, out_dir: str, var: str, table: str = "R
         plt.close()
     else:
         plt.show()
-        
+
+  
 def var_capacity_scatters_conditional(database: str, out_dir: str, var: str, std_tolerance=0.5):
     """
     Use standard deviation-based tolerance for each parameter type
@@ -484,67 +524,113 @@ def calculate_morris_effects(database: str, out_dir: str, percentile=10):
                 'mean_abs': np.mean(np.abs(effects))
             }
     
-    print("==== Morris Elementary Effects: ====")
-    for key, val in morris_stats.items():
-        print(f"{key} = {val}")
+    if out_dir is not None:
+        print(f"...Printing Morris Effects to output dir...")
+        out_file_path = os.path.join(out_dir, "morris-elementary-effects.txt")
+        with open(out_file_path, "w") as file:
+            for key, val in morris_stats.items():
+                file.write(f"{key}\n")
+                file.write(f"{val}\n")
+                file.write("\n")
+    else:
+        print("==== Morris Elementary Effects: ====")
+        for key, val in morris_stats.items():
+            print(f"{key} = {val}")
     
     return morris_stats, elementary_effects
 
 
-def analyze_parameter_effects(data, param_name, output_name='oCC'):
-    """
-    Comprehensive analysis of single parameter effect
-    Returns: scatter plot, regression stats, distribution analysis
-    """
-    # Scatter plot with trendline
-    # Calculate R², p-value, correlation coefficient
-    # Box plot showing output distribution
+def veg_hydro_sensitivity_comp(database: str, out_dir: str, tornado_results):
+
+    # Get tornado results and group them
+    veg_sensitivity = np.mean([abs(tornado_results['sensitivity_metrics'][p]) for p in veg_adjustments])
+    hydro_sensitivity = np.mean([abs(tornado_results['sensitivity_metrics'][p]) for p in hydro_adjustments])
+
+    # Create comparison bar plot
+    plt.figure(figsize=(6, 4))
+    plt.bar(['Vegetation\nUncertainty', 'Hydrologic\nUncertainty'], 
+            [veg_sensitivity, hydro_sensitivity], 
+            color=['green', 'blue'], alpha=0.7)
+    plt.ylabel('Mean Absolute Sensitivity')
+    plt.title('Vegetation vs Hydrologic Parameter Importance')
     
-def compare_fis_pathways(data):
-    """
-    Compare vegetation-only vs full model uncertainty
-    Shows: oVC variability vs oCC variability
-    """
-    # Calculate variance contributions
-    # Create comparative visualization
-
-
-
-# OLD ANALYSIS.PY
-
-def var_distributions(database, out_dir, var, table, num_bins=50, kde_switch=False):
-    """
-    Generate histograms of the distribution of relevant input variables. Options to filter.
-    :param database: path to a BRAT database (.gpkg)
-    :param out_dir: optional path to a folder to save plots to
-    """
-    # x_vars = [
-    #     # ('var name', 'description', num_bins, log_scale, cutoff_val)
-    #     # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
-    #     ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
-    #     ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
-    #     ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 30),
-    #     ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 2200),
-    #     ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
-    # ]
-    
-
-    var_data = select_var(database, var, table)
-
-    # plot raw data
-    sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
-    plt.xlabel(var)
-    plt.ylabel('Count')
-    plt.title(f"Distribution of {var} in Siletz Watershed")
-    print(f"...{num_bins}-bin histogram for {var} generated...")
-
     if out_dir is not None:
         print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, f"distribution-{var}.png")
+        out_file_path = os.path.join(out_dir, "veg-hydro-sensitivity-comparison.png")
         plt.savefig(out_file_path)
         plt.close()
     else:
         plt.show()
+
+
+def variance_decompisition(database: str, out_dir: str):
+
+    data = get_results_data(database)
+
+    # Fit models to decompose variance
+    X_veg = data[veg_adjustments].values
+    X_hydro = data[hydro_adjustments].values  
+    X_all = data[veg_adjustments + hydro_adjustments].values
+    y = data['AVG_oCC_EX'].values
+
+    # Calculate R² for different models
+    r2_veg_only = LinearRegression().fit(X_veg, y).score(X_veg, y)
+    r2_hydro_only = LinearRegression().fit(X_hydro, y).score(X_hydro, y)
+    r2_full = LinearRegression().fit(X_all, y).score(X_all, y)
+
+    # Create stacked bar showing variance explained
+    plt.figure(figsize=(6, 4))
+    plt.bar(['Vegetation\nOnly', 'Hydrology\nOnly', 'Combined\nModel'], 
+            [r2_veg_only, r2_hydro_only, r2_full], alpha=0.7)
+    plt.ylabel('Variance Explained (R²)')
+    plt.title('Model Component Performance')
+    plt.ylim(0, 1)
+    
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "veg-hydro-variance-comparison.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+    
+def check_veg_input_corr(database: str):
+    cap_data = select_var(database, "oCC_EX", "Results")
+    veg30_data = select_var(database, "iVeg_30EX", "Results")
+    veg100_data = select_var(database, "iVeg100EX", "Results")
+    
+    # Check the actual relationship strength
+    corr_30m = stats.pearsonr(veg30_data, cap_data)[0]
+    corr_100m = stats.pearsonr(veg100_data, cap_data)[0]
+
+    print(f"Direct correlation - 30m input to oVC: {corr_30m:.3f}")
+    print(f"Direct correlation - 100m input to oVC: {corr_100m:.3f}")
+
+    # Also check the variance in each input
+    print(f"30m input variance: {np.var(veg30_data):.3f}")
+    print(f"100m input variance: {np.var(veg100_data):.3f}")
+    
+    # Check if 100m has fundamentally stronger relationship with output
+    
+    plt.figure(figsize=(10, 4))
+
+    plt.subplot(1, 2, 1)
+    plt.scatter(veg30_data, cap_data, alpha=0.5)
+    plt.xlabel('30m Vegetation Suitability')
+    plt.ylabel('oVC')
+    plt.title(f'30m vs oVC (r={corr_30m:.3f})')
+
+    plt.subplot(1, 2, 2)  
+    plt.scatter(veg100_data, cap_data, alpha=0.5, color='orange')
+    plt.xlabel('100m Vegetation Suitability') 
+    plt.ylabel('oVC')
+    plt.title(f'100m vs oVC (r={corr_100m:.3f})')
+    plt.show()
+
+
+
+# OLD ANALYSIS.PY
 
 
 
@@ -702,7 +788,23 @@ def hydro_limitation(database, out_dir):
     
 
     
+# HELPER functions
 
+def get_results_data(database: str, table: str = "ResultStats"):
+    """
+    Return adjustments and outputs from a table (e.g. ResultStats) in monte carlo database as a DataFrame
+    """
+    results_cols = ['Veg30_Scale', 'Veg100_Scale', 'SPLow_Scale', 'SPLow_Shift', 
+                    'SP2_Scale', 'SP2_Shift', 'Slope_Scale', 'Slope_Shift',
+                    'AVG_oVC_EX', 'StDev_oVC_EX', 'AVG_oCC_EX', 'StDev_oVC_EX']
+    
+    with sqlite3.connect(database) as conn:
+        cur = conn.cursor()
+        cur.execute(f"SELECT {', '.join(results_cols)} FROM {table}")
+        results = cur.fetchall()
+        results_data = pd.DataFrame(results, columns=results_cols)
+
+    return results_data
 
 def select_var(database: str, var: str, table: str = "ReachAttributes", where: str = None):
     """
