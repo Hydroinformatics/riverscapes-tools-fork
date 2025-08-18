@@ -52,9 +52,9 @@ input_dists_sampled = {  # var: (distribution, [params])
 input_dists_uniform = {   # var: (distribution, [params])
     'iVeg_30EX': ('uniform', [0, 4]),
     'iVeg100EX': ('uniform', [0, 4]),
-    'iHyd_SPLow': ('uniform', [0, 190]),
+    'iHyd_SPLow': ('uniform', [0, 200]),
     'iHyd_SP2': ('uniform', [0, 2400]),
-    'iGeo_Slope': ('uniform', [0, 1])
+    'iGeo_Slope': ('uniform', [0, 0.23])
 }
 
 adjustment_dist = {
