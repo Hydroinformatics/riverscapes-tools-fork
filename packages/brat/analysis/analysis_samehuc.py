@@ -9,18 +9,6 @@ Evan Hackstadt
 July 2025
 """
 
-# TODO:
-# For each individual FIS run,
-#  - visualize the MFs that were changed
-#  - view Veg FIS control surface in 3d (see code backbone below)
-#  - compare each reach output to ST: % changed; diff averages; 
-# Comparing all FIS runs vs. ST,
-#  - generate bar chart of means; add on st.dev. error bars?
-#  - generate stacked (categories) bar chart comparing capacity outputs
-# INSERT all analysis data into another table in fis-all.db
-
-
-
 
 #imports
 import os
@@ -134,7 +122,7 @@ def capacity_means_box_whisker(database, out_dir):
     plt.figure(figsize=(16,8))
     sns.boxplot(data, whis=(0,100))
     plt.xticks(rotation=45)
-    plt.ylabel("Mean Overall Dam Capacity (dams/km)")
+    plt.ylabel("Output Dam Capacity (dams/km)")
     plt.title("BRAT Capacity Outputs Under Different FIS Adjustments")
     # plt.ylim(0, 15)
 
@@ -399,38 +387,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-''' from scikit-fuzzy docs
-
-#We can simulate at higher resolution with full accuracy
-upsampled = np.linspace(-2, 2, 21)
-x, y = np.meshgrid(upsampled, upsampled)
-z = np.zeros_like(x)
-
-# Loop through the system 21*21 times to collect the control surface
-for i in range(21):
-    for j in range(21):
-        sim.input['error'] = x[i, j]
-        sim.input['delta'] = y[i, j]
-        sim.compute()
-        z[i, j] = sim.output['output']
-
-# Plot the result in pretty 3D with alpha blending
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D # Required for 3D plotting
-fig = plt.figure(figsize=(8, 8))
-ax = fig.add_subplot(111, projection='3d')
-
-surf = ax.plot_surface(x, y, z, rstride=1, cstride=1, cmap='viridis',
-linewidth=0.4, antialiased=True)
-
-cset = ax.contourf(x, y, z, zdir='z', offset=-2.5, cmap='viridis', alpha=0.5)
-cset = ax.contourf(x, y, z, zdir='x', offset=3, cmap='viridis', alpha=0.5)
-cset = ax.contourf(x, y, z, zdir='y', offset=3, cmap='viridis', alpha=0.5)
-
-ax.view_init(30, 200)
-
-'''
