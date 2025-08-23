@@ -37,11 +37,11 @@ def analyze(database, table, out_dir):
 
     # > Call analysis functions. Can turn these on or off
     
-    # input_distributions(database, table, out_dir)
+    input_distributions(database, table, out_dir)
     # output_distribution(database, table, out_dir)
     # capacity_scatter_plots(database, table, out_dir)
     # capacity_scatter_plots_zoomed(database, table, out_dir)
-    hydro_limitation(database, table, out_dir)
+    # hydro_limitation(database, table, out_dir)
     # capacity_bar_plots(database, out_dir)
 
     print("Analysis complete.")
@@ -58,11 +58,11 @@ def input_distributions(database, table, out_dir):
     x_vars = [
         # ('var name', 'description', num_bins, log_scale, cutoff_val)
         # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
-        ('iVeg_30EX', 'Streamside vegetation suitability', 60, False, None),
-        ('iVeg100EX', 'Streamside vegetation suitability', 60, False, None),
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, True, 10),
-        ('iHyd_SP2', 'Peak Flow (watts)', 75, True, 1500),
-        ('iGeo_Slope', 'Stream Slope', 'auto', False, None)
+        ('iVeg_30EX', '30m Vegetation Suitability', 60, False, None),
+        ('iVeg100EX', '100m Vegetation Suitability', 60, False, None),
+        ('iHyd_SPLow', 'Baseflow (watts/m)', 50, True, 10),
+        ('iHyd_SP2', 'Peak Flow (watts/m)', 75, True, 1500),
+        ('iGeo_Slope', 'Stream Slope (decimal %)', 'auto', False, None)
     ]
 
     kde_switch = False
@@ -320,6 +320,8 @@ def hydro_limitation(database, table, out_dir):
         hue_order = [cat['label'] for cat in var_cat_list]
         palette = sns.color_palette("muted")
         custom_palette = [palette[9], palette[2], palette[1], palette[3]]
+        if var == 'iGeo_Slope':
+            custom_palette = [palette[2], palette[9], palette[1], palette[3]]   # swap blue and green
         
         plt.figure(figsize=(8,8))
         sns.scatterplot(data=data, x='oVC', y='oCC', hue='category', hue_order=hue_order,
@@ -392,8 +394,6 @@ def hydro_limitation(database, table, out_dir):
         plt.show()
     
     
-
-
 
 def capacity_bar_plots(database, out_dir):
     """
