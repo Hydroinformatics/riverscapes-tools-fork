@@ -34,8 +34,8 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
-    capacity_percent_comparison_bars(database, out_dir)
-    capacity_distance_comparison_bars(database, out_dir)
+    # capacity_percent_comparison_bars(database, out_dir)
+    # capacity_distance_comparison_bars(database, out_dir)
     all_huc_report(database, out_dir)
 
     print("Analysis complete.")
@@ -205,7 +205,7 @@ def all_huc_report(database, out_dir):
     
     print(data)
     # now construct bar chart
-    plt.pie(data, labels=categories, colors=cat_colors, autopct='%.0f%%')
+    plt.pie(data, labels=categories, colors=cat_colors, autopct='%.2f%%')
 
     plt.title("Categorical Percent Breakdown of Existing Capacity for ALL HUCs")
     
