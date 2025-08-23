@@ -51,7 +51,7 @@ def vegetation_summary(outputs_gpkg_path: str, label: str, veg_raster: str, buff
             geom = feature.GetGeometryRef()
             if transform:
                 geom.Transform(transform)
-
+            
             polygon = VectorBase.ogr2shapely(geom).buffer(raster_buffer)
             polygons[reach_id] = polygon
 

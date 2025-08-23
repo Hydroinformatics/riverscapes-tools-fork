@@ -32,6 +32,8 @@ setup(name='sqlbrat',
       entry_points={
           "console_scripts": [
               'brat = sqlbrat.brat:main',
+              'brat_custom_fis = sqlbrat.brat_custom_fis:main',     # added for FIS sensitivity analysis
+              'brat_montecarlo = sqlbrat.brat_montecarlo:main',     # added for FIS sensitivity analysis
               'beaver_activity = beaver_sign.beaver_sign:main'
           ]
       },

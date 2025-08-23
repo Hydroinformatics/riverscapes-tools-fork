@@ -1,4 +1,9 @@
-""" Build a BRAT project by segmenting a river network to a specified
+""" Modified BRAT script for One-at-a-Time FIS Sensitivity Analysis
+
+    Evan Hackstadt
+    July 2025
+
+    Build a BRAT project by segmenting a river network to a specified
     length and then extract the input values required to run the
     BRAT model for each reach segment from various GIS layers.
 
@@ -37,6 +42,9 @@ from sqlbrat.utils.dam_reach_type import dam_reach_type
 from sqlbrat.brat_report import BratReport
 from sqlbrat.__version__ import __version__
 
+''' FIS Sensitivity Analysis '''
+from analysis.vegetation_fis_custom import vegetation_fis_custom
+from analysis.combined_fis_custom import combined_fis_custom
 
 Path = str
 
@@ -92,12 +100,15 @@ Epochs = [
 ]
 
 
-def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
+def brat_custom_fis(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
          anthro_flowlines: Path, anthro_igos: Path, anthro_dgos: Path, hillshade: Path,
          existing_veg: Path, historical_veg: Path, output_folder: Path, streamside_buffer: float,
          riparian_buffer: float, reach_codes: List[str], canal_codes: List[str], peren_codes: List[str],
          flow_areas: Path, waterbodies: Path, max_waterbody: float, valley_bottom: Path,
-         meta: Dict[str, str]):
+         meta: Dict[str, str],
+         veg_adj_type: str, veg_adj_val: float,
+         comb_adj_type: str, comb_spl_adj_val: float, comb_sp2_adj_val: float, comb_slo_adj_val: float
+         ):
     """Build a BRAT project by segmenting a reach network and copying
     all the necessary layers into the resultant BRAT project
 
@@ -123,12 +134,36 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_waterbody {float} -- Area (sqm) of largest waterbody to be retained.
         valley_bottom {str} -- Path to valley bottom polygon layer.
         meta (Dict[str,str]): dictionary of riverscapes metadata key: value pairs
+        
+        FIS Sensitivity Analysis -- Acceptable Args
+        # VEG TYPE: 'scale' or 'shape' or None
+        # VEG VALUE: float or None
+        # COMB TYPE: 'shift', 'scale', 'shape', or None
+        # COMB SPL VALUE: floats or None, for SPlow MFs
+        # COMB SP2 VALUE: floats or None, for SP2 MFs
+        # COMB SLO VALUE: floats or None, for Slope MFs
+        
+        # SHIFT val: float representing the actual units to shift MF by (neg = left, pos = right)
+        # SCALE val: float representing the scaling factor ((0,1) = compress, >1 = stretch)
+        # SHAPE val: either 1.0 ('best fit' curves, using gaussmf and pimf) or 2.0 ('loose fit' curves, using gaussmf and gbellmf)
     """
 
     log = Logger("BRAT")
     log.info(f'Starting BRAT v.{cfg.version}')
     log.info(f'HUC: {huc}')
     log.info(f'EPSG: {cfg.OUTPUT_EPSG}')
+    
+    
+    log.info(f'VEGETATION FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {veg_adj_type}')
+    log.info(f'Value = {veg_adj_val}')
+    log.info(f'COMBINED FIS ADJUSTMENTS SPECIFIED:')
+    log.info(f'Type = {comb_adj_type}')
+    log.info(f'Values: SPlow = {comb_spl_adj_val}, SP2 = {comb_sp2_adj_val}, Slope = {comb_slo_adj_val}')
+    
+    if veg_adj_type is None and comb_adj_type is None:
+        log.warning(f'NO FIS ADJUSTMENTS SPECIFIED. Running BRAT with Standard FIS...')
+    
 
     augment_layermeta()
 
@@ -431,6 +466,16 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
         max_drainage_area = None
 
     # Calculate the vegetation and combined FIS for the existing and historical vegetation epochs
+    ''' ---------------------- FIS Sensitivity Analysis begins here: ---------------------- '''
+    
+    fis_dir_path = os.path.join(output_folder, "fis/")
+    if os.path.exists(fis_dir_path):
+        log.info(f"FIS directory already exists at {fis_dir_path}")
+    else:
+        os.mkdir(fis_dir_path)
+        log.info(f"Created FIS directory at {fis_dir_path}")
+    ''' ----------------------               (end)               ---------------------- '''
+
     for epoch, prefix, ltype, orig_id in Epochs:
 
         # Calculate the vegetation suitability for each buffer
@@ -438,13 +483,51 @@ def brat(huc: int, hydro_flowlines: Path, hydro_igos: Path, hydro_dgos: Path,
 
         # Run the vegetation and then combined FIS for this epoch
 
-        vegetation_fis(outputs_gpkg_path, epoch, prefix)
-        combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)
+        ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- '''
+        # vegetation_fis(outputs_gpkg_path, epoch, prefix)      # turned OFF for Sensitivity Analysis
+        # combined_fis(outputs_gpkg_path, epoch, prefix, max_drainage_area)     # turned OFF for Sensitivity Analysis
+        vegetation_fis_custom(outputs_gpkg_path, epoch, prefix, 
+                              adjustment_type=veg_adj_type, adjustment_value=veg_adj_val)
+        combined_fis_custom(outputs_gpkg_path, epoch, prefix, max_drainage_area, 
+                            adjustment_type=comb_adj_type, spl_adj_val=comb_spl_adj_val,
+                            sp2_adj_val=comb_sp2_adj_val, slo_adj_val=comb_slo_adj_val)
+        ''' ----------------------               (end)               ----------------------'''
 
         orig_raster = os.path.join(project.project_dir, proj_nodes['Inputs'].find('Raster[@id="{}"]/Path'.format(orig_id)).text)
         _veg_suit_raster_node, veg_suit_raster = project.add_project_raster(proj_nodes['Intermediates'], LayerTypes[ltype], None, True)
         output_vegetation_raster(outputs_gpkg_path, orig_raster, veg_suit_raster, epoch, prefix, ecoregion)
+
+    ''' ---------------------- FIS Sensitivity Analysis changes made here: ---------------------- '''
+    # Log FIS adjustments in a separate table just for records
+    default_adjustment_values = {
+        'shift': 0.0,       # no shift
+        'scale': 1.0,       # no scaling
+        'shape': 0.0        # any val != 1.0 or 2.0
+    }
+    with SQLiteCon(outputs_gpkg_path) as database:
+        log.info('Recording adjustments...')
+        create_stmt = "CREATE TABLE IF NOT EXISTS FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value)"
+        database.curs.execute(create_stmt)
+        
+        # prepare data to log - we want NULLs if no change
+        comb_spl_adj_val = None if comb_spl_adj_val == default_adjustment_values[comb_adj_type] else comb_spl_adj_val
+        comb_sp2_adj_val = None if comb_sp2_adj_val == default_adjustment_values[comb_adj_type] else comb_sp2_adj_val
+        comb_slo_adj_val = None if comb_slo_adj_val == default_adjustment_values[comb_adj_type] else comb_slo_adj_val
+        
+        adjustment_data = [
+            ["Vegetation FIS", "Riparian Suitability", veg_adj_type, veg_adj_val],
+            ["Vegetation FIS", "Streamside Suitability", veg_adj_type, veg_adj_val],
+            ["Combined FIS", "SPlow", comb_adj_type, comb_spl_adj_val],
+            ["Combined FIS", "SP2", comb_adj_type, comb_sp2_adj_val],
+            ["Combined FIS", "Slope", comb_adj_type, comb_slo_adj_val],
+        ]
+        # insert
+        database.curs.executemany('INSERT INTO FIS_Adjustments (FIS, MF, Adj_Type, Adj_Value) VALUES(?, ?, ?, ?)', adjustment_data)
+        database.conn.commit()
+    ''' ----------------------               (end)               ----------------------'''
     
+
+
     # Calculate departure from historical conditions
     with SQLiteCon(outputs_gpkg_path) as database:
         log.info('Calculating departure from historic conditions')
@@ -591,6 +674,15 @@ def main():
     parser.add_argument('--meta', help='riverscapes project metadata as comma separated key=value pairs', type=str)
     parser.add_argument('--verbose', help='(optional) a little extra logging ', action='store_true', default=False)
     parser.add_argument('--debug', help='(optional) more output about things like memory usage. There is a performance cost', action='store_true', default=False)
+    
+    ''' ———————— FIS SENSITIVITY ANALYSIS ARGS ———————— '''
+    parser.add_argument('--veg_adj_type', help="(optional) Type of adjustment applied to the Vegetation FIS: 'scale' or 'shape'.", type=str, default=None)
+    parser.add_argument('--veg_adj_val', help="(optional) Float value of Vegetation FIS adjustment: scale factor or (1.0 for 'best fit' shapes, 2.0 for 'loose fit' shapes).", type=float, default=None)
+    parser.add_argument('--comb_adj_type', help="(optional) Type of adjustment applied to the Combined FIS: 'shift' or 'scale' or 'shape'.", type=str, default=None)
+    parser.add_argument('--comb_spl_adj_val', help="(optional) Float value of Combined FIS SPlow (baseflow) MFs adjustment.", type=float, default=None)
+    parser.add_argument('--comb_sp2_adj_val', help="(optional) Float value of Combined FIS SP2 (peak flow) MFs adjustment.", type=float, default=None)
+    parser.add_argument('--comb_slo_adj_val', help="(optional) Float value of Combined FIS Slope MFs adjustment.", type=float, default=None)
+    
 
     # Substitute patterns for environment varaibles
     args = dotenv.parse_args_env(parser)
@@ -598,6 +690,15 @@ def main():
     reach_codes = args.reach_codes.split(',') if args.reach_codes else None
     canal_codes = args.canal_codes.split(',') if args.canal_codes else None
     peren_codes = args.peren_codes.split(',') if args.peren_codes else None
+    
+    ''' ———————— FIS SENSITIVITY ANALYSIS ARGS ———————— '''
+    veg_adj_type = args.veg_adj_type if args.veg_adj_type else None
+    veg_adj_val = args.veg_adj_val if args.veg_adj_val else None
+    comb_adj_type = args.comb_adj_type if args.comb_adj_type else None
+    comb_spl_adj_val = args.comb_spl_adj_val if args.comb_spl_adj_val else None
+    comb_sp2_adj_val = args.comb_sp2_adj_val if args.comb_sp2_adj_val else None
+    comb_slo_adj_val = args.comb_slo_adj_val if args.comb_slo_adj_val else None
+
 
     # Initiate the log file
     log = Logger("BRAT Build")
@@ -610,25 +711,31 @@ def main():
         if args.debug is True:
             from rscommons.debug import ThreadRun
             memfile = os.path.join(args.output_folder, 'brat_build_memusage.log')
-            retcode, max_obj = ThreadRun(brat, memfile,
+            retcode, max_obj = ThreadRun(brat_custom_fis, memfile,
                                          args.huc, args.hydro_flowlines, args.hydro_igos, args.hydro_dgos,
                                          args.anthro_flowlines, args.anthro_igos, args.anthro_dgos,
                                          args.hillshade, args.existing_veg, args.historical_veg, args.output_folder,
                                          args.streamside_buffer, args.riparian_buffer,
                                          reach_codes, canal_codes, peren_codes,
                                          args.flow_areas, args.waterbodies, args.max_waterbody,
-                                         args.valley_bottom, meta
+                                         args.valley_bottom,
+                                         meta,
+                                         veg_adj_type, veg_adj_val,
+                                         comb_adj_type, comb_spl_adj_val, comb_sp2_adj_val, comb_slo_adj_val
                                          )
             log.debug('Return code: {}, [Max process usage] {}'.format(retcode, max_obj))
         else:
-            brat(
+            brat_custom_fis(
                 args.huc, args.hydro_flowlines, args.hydro_igos, args.hydro_dgos,
                 args.anthro_flowlines, args.anthro_igos, args.anthro_dgos,
                 args.hillshade, args.existing_veg, args.historical_veg, args.output_folder,
                 args.streamside_buffer, args.riparian_buffer,
                 reach_codes, canal_codes, peren_codes,
                 args.flow_areas, args.waterbodies, args.max_waterbody,
-                args.valley_bottom, meta
+                args.valley_bottom,
+                meta,
+                veg_adj_type, veg_adj_val,
+                comb_adj_type, comb_spl_adj_val, comb_sp2_adj_val, comb_slo_adj_val
             )
 
     except Exception as ex:

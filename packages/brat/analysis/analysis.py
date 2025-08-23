@@ -4,15 +4,14 @@ This does not have to be the standard brat.gpkg (e.g. could be a merged db) but 
 Checks for correlation between dam capacity and various other variables.
 Can print or save matplotlib plots.
 
+INSTRUCTIONS:
+    Run the script from the terminal, passing args (e.g. path to database) as defined
+
 Evan Hackstadt
 July 2025
 """
 
 
-
-# TODO:
-    # clean up: too many graphs; decide which are relevant
-    # FINISH compare_watersheds()
 
 #imports
 import os
@@ -20,11 +19,14 @@ import sys
 import argparse
 import traceback
 import sqlite3
-import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.legend_handler import HandlerLine2D
+import seaborn as sns
 
 
-def analyze(database, out_dir):
+def analyze(database, table, out_dir):
     """
     Master function called in main. Calls sub-functions for different analyses.
     :param database: path to a BRAT database containing variables of interest
@@ -36,81 +38,47 @@ def analyze(database, out_dir):
         print("Output dir provided; saving plots to {}".format(out_dir))
 
     # > Call analysis functions. Can turn these on or off
-
-
-    suitability_distribution(database, out_dir)
-    input_distributions(database, out_dir)
-    output_distribution(database, out_dir)
-    capacity_scatter_plots(database, out_dir)
-    capacity_scatter_plots_zoomed(database, out_dir)
-    hydro_limitation(database, out_dir)
-    compare_hucs(database, out_dir)
+    
+    input_distributions(database, table, out_dir)
+    # output_distribution(database, table, out_dir)
+    # capacity_scatter_plots(database, table, out_dir)
+    # capacity_scatter_plots_zoomed(database, table, out_dir)
+    # hydro_limitation(database, table, out_dir)
     # capacity_bar_plots(database, out_dir)
 
     print("Analysis complete.")
 
 
-def suitability_distribution(database, out_dir):
+
+def input_distributions(database, table, out_dir):
     """
-    Generate histograms of iVeg_30EX and iVeg100EX (mean veg suitabilities for each reach)
-    :param database: path to a BRAT database containing variables of interest
-    :param out_dir: optional path to a folder to save plots to
-    """
-    print("> FUNCTION: suitability_distribution()")
-
-    vars = {
-        'iVeg_30EX': 'Streamside (30m) vegetation suitability',
-        'iVeg100EX': 'Riparian (100m) vegetation suitability'
-    }
-
-    # Generate histograms
-    for var, descr in vars.items():
-        var_data = select_var(database, var)
-        plt.hist(var_data, bins=10, edgecolor='black')
-        plt.xlabel(var)
-        plt.title(f"{descr} Distribution")
-        print(f"...Plot for {var} generated...")
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "suitability-distribution-{}.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-
-
-def input_distributions(database, out_dir):
-    """
-    Generate histograms of the distribution of certain input variables
-        for reaches with Frequent or Pervasive dams (oCC_EX > 5)
-    :param database: path to a BRAT database containing variables of interest
+    Generate histograms of the distribution of relevant input variables. Options to filter.
+    :param database: path to a BRAT database (.gpkg)
+    :param table: table to select data from in the database
     :param out_dir: optional path to a folder to save plots to
     """
     print("> FUNCTION: input_distributions()")
 
     x_vars = [
-        # ('var name', 'description', num_bins, x_scalar)
-        # note: set x_scalar to 1.00 if you want the full histogram
-        ('iHyd_SPLow', 'Baseflow (watts)', 50, 1.00),
-        ('iHyd_SP2', 'Peak Flow (watts)', 50, 0.5),
-        ('iGeo_Slope', 'Stream Slope', 50, 1.00),
-        ('iGeo_DA', 'Upstream Drainage Area (sq km)', 50, 0.005)
+        # ('var name', 'description', num_bins, log_scale, cutoff_val)
+        # note: log_scale and cutoff_val optional, keep as False and None if you don't want additional zoomed-in histograms
+        ('iVeg_30EX', '30m Vegetation Suitability', 60, False, None),
+        ('iVeg100EX', '100m Vegetation Suitability', 60, False, None),
+        ('iHyd_SPLow', 'Baseflow (watts/m)', 50, True, 10),
+        ('iHyd_SP2', 'Peak Flow (watts/m)', 75, True, 1500),
+        ('iGeo_Slope', 'Stream Slope (decimal %)', 'auto', False, None)
     ]
 
-    capacity_data = select_var(database, 'oCC_EX')
+    kde_switch = False
 
-    for var, descr, num_bins, x_scalar in x_vars:
-        var_data = select_var(database, var)
-        # filter data to high capacity
-        pairs = dict(zip(var_data, capacity_data))
-        filtered_pairs = {var: cap for var, cap in pairs.items() if cap > 5}
+    for var, descr, num_bins, log, cutoff_val in x_vars:
+        var_data = select_var(database, var, table)
 
-        # plot
-        plt.hist(filtered_pairs.keys(), bins=num_bins)
+        # plot raw data
+        sns.histplot(data=var_data, bins=num_bins, kde=kde_switch)
         plt.xlabel(descr)
         plt.ylabel('Count')
-        plt.title("Distribution of {} at Frequent/Pervasive reaches".format(var))
+        plt.title("Distribution of {} in Siletz Watershed".format(var))
         print("...{}-bin histogram for {} generated...".format(num_bins, var))
 
         if out_dir is not None:
@@ -121,19 +89,33 @@ def input_distributions(database, out_dir):
         else:
             plt.show()
 
-        if x_scalar != 1.00:
-            # simply remove pairs past the x-cutoff
-            cutoff = max(filtered_pairs.keys())*x_scalar
-            filtered_pairs = {var: cap for var, cap in filtered_pairs.items() if var < cutoff}
-            # plot
-            plt.hist(filtered_pairs.keys(), bins=num_bins)
+        # also generate an additional log-scale histogram if requested
+        if log:
+            print(f"Log-scale histogram also requested for {var}. Plotting...")
+            sns.histplot(data=var_data, bins=num_bins, kde=kde_switch, log_scale=log)
             plt.xlabel(descr)
             plt.ylabel('Count')
-            plt.title("[subset] Distribution of {} at Frequent/Pervasive reaches".format(var))
-            print("...{}-bin histogram for {} generated...".format(num_bins, var))
+            plt.title("Log-Scale Distribution of {} in Siletz Watershed".format(var))
 
             if out_dir is not None:
-                print(f"...Saving plot to output dir...")
+                print("...Saving {}-bin log-scale histogram for {}...".format(num_bins, var))
+                out_file_path = os.path.join(out_dir, "input-distribution-{}-log.png".format(var))
+                plt.savefig(out_file_path)
+                plt.close()
+            else:
+                plt.show()
+
+        # also generate an additional cut-off histogram if requested
+        if cutoff_val:
+            filtered_var_data = [val for val in var_data if val <= cutoff_val]
+            print(f"Cut-off at {cutoff_val} histogram also requested for {var}. Plotting...")
+            sns.histplot(data=filtered_var_data, bins=num_bins, kde=kde_switch)
+            plt.xlabel(descr)
+            plt.ylabel('Count')
+            plt.title("Filtered Distribution of {} in Siletz Watershed".format(var))
+
+            if out_dir is not None:
+                print("...Saving {}-bin cut-off histogram for {}...".format(num_bins, var))
                 out_file_path = os.path.join(out_dir, "input-distribution-{}-zoomed.png".format(var))
                 plt.savefig(out_file_path)
                 plt.close()
@@ -141,16 +123,17 @@ def input_distributions(database, out_dir):
                 plt.show()
 
 
-def output_distribution(database, out_dir):
+def output_distribution(database, table, out_dir):
     """
     Generate two histograms of the dam capacities, one with few bins and one with many
-    :param database: path to a BRAT database containing variables of interest
+    :param database: path to a BRAT database (.gpkg)
+    :param table: table to select data from in the database
     :param out_dir: optional path to a folder to save plots to
     """
     print("> FUNCTION: output_distribution()")
 
     histogram_bin_counts = [4, 12, 24, 50]
-    capacity_data = select_var(database, 'oCC_EX')
+    capacity_data = select_var(database, 'oCC_EX', table)
 
     for num_bins in histogram_bin_counts:
         plt.hist(capacity_data, bins=num_bins, edgecolor='black')
@@ -169,10 +152,11 @@ def output_distribution(database, out_dir):
 
 
 
-def capacity_scatter_plots(database, out_dir):
+def capacity_scatter_plots(database, table, out_dir):
     """
     Generate scatters of oCC_EX vs. continuous variables
-    :param database: path to a BRAT database containing variables of interest
+    :param database: path to a BRAT database (.gpkg)
+    :param table: table to select data from in the database
     :param out_dir: optional path to a folder to save plots to
     """
     print("> FUNCTION: capacity_scatter_plots()")
@@ -183,20 +167,21 @@ def capacity_scatter_plots(database, out_dir):
         'iVeg100EX': 'Existing Veg Suitability (100m buffer)',
         'iVeg_30EX': 'Existing Veg Suitability (30m buffer)',
         'iGeo_Slope': 'Stream Slope',
-        'iGeo_DA': 'Upstream Drainage Area (sq km)',
+        # 'iGeo_DA': 'Upstream Drainage Area (sq km)',
         'iHyd_SPLow': 'Baseflow Stream Power (watts)',
         'iHyd_SP2': 'Peak Flow Stream Power (watts)'
     }
 
     # Get dam capacity outputs
-    capacity_data = select_var(database, 'oCC_EX')
+    capacity_data = select_var(database, 'oCC_EX', table)
 
     # Get each variable, create scatter
     for var, descr in x_vars.items():
-        var_data = select_var(database, var)
+        var_data = select_var(database, var, table)
         
         # generate a plot
         plt.scatter(var_data, capacity_data, s=0.75, marker='.')
+        # sns.scatterplot(x=var_data, y=capacity_data, marker='.', alpha=0.75)
         plt.xlabel(var)
         plt.ylabel("Overall Dam Capacity (oCC_EX)")
         plt.title(f"{descr} vs. Dam Capacity")
@@ -211,10 +196,11 @@ def capacity_scatter_plots(database, out_dir):
             plt.show()
 
 
-def capacity_scatter_plots_zoomed(database, out_dir):
+def capacity_scatter_plots_zoomed(database, table, out_dir):
     """
     Generate "zoomed-in" scatters of oCC_EX and certain continuous variables with log-scale x-axis
-    :param database: path to a BRAT database containing variables of interest
+    :param database: path to a BRAT database (.gpkg)
+    :param table: table to select data from in the database
     :param out_dir: optional path to a folder to save plots to
     """
     print("> FUNCTION: capacity_scatter_plots_zoomed()")
@@ -222,27 +208,28 @@ def capacity_scatter_plots_zoomed(database, out_dir):
     # Variables of interest from ReachAttributes. Can easily be modified.
     x_vars = {
         # variable name: ('description', x-cutoff scalar)
-        'iHyd_SPLow': ('Baseflow Stream Power (watts)', 0.025),
-        'iHyd_SP2': ('Peak Flow Stream Power (watts)', 0.025),
+        'iHyd_SPLow': ('SPLow baseflow (watts/m)', 0.025),
+        'iHyd_SP2': ('Peak Flow Stream Power (watts/m)', 0.025),
         'iGeo_Slope': ('Stream Slope', 0.20)
     }
 
     # Get dam capacity outputs
-    capacity_data = select_var(database, 'oCC_EX')
+    capacity_data = select_var(database, 'oCC_EX', table)
 
     # Get each variable, create zoomed-in scatter
     for var, info in x_vars.items():
-        var_data = select_var(database, var)
+        var_data = select_var(database, var, table)
         pairs = dict(zip(var_data, capacity_data))
 
-        x_cutoff = (max(var_data) * info[1])   # view the first quarter of the x-axis
+        x_cutoff = (max(var_data) * info[1])   # apply the x-scalar
         filtered_pairs = {x: y for x, y in pairs.items() if x < x_cutoff}
         print(f"...generating zoomed-in plot for {var} with x cutoff = {x_cutoff}...")
         
         plt.scatter(filtered_pairs.keys(), filtered_pairs.values(), s=0.75, marker='.')
+        # sns.scatterplot(x=filtered_pairs.keys(), y=filtered_pairs.values(), marker='.', alpha=0.75)
         plt.xlabel(var)
         plt.ylabel("Overall Dam Capacity (oCC_EX)")
-        plt.title(f"[subset] {info[0]} vs. Dam Capacity")
+        plt.title(f"{info[0]} vs. Dam Capacity")
         print(f"...Plot for {var} generated...")
 
         if out_dir is not None:
@@ -254,7 +241,166 @@ def capacity_scatter_plots_zoomed(database, out_dir):
             plt.show()
 
 
+def hydro_limitation(database, table, out_dir):
+    """
+    Analyze how hydro parameters (baseflow, peakflow, slope) limited the vegetative capacity.
+    Reports # and % of reaches limited; generates colored scatters; generates summary scatter
+    :param database: path to a BRAT database (.gpkg)
+    :param table: table to select data from in the database
+    :param out_dir: optional path to a folder to save plots to
+    """
 
+    # Hydrologic variables of interest (inputs into the Combined FIS)
+
+    x_vars = {
+        'iHyd_SPlow': 'Baseflow stream power (watts)',
+        'iHyd_SP2': 'Peakflow stream power (watts)',
+        'iGeo_Slope': 'Stream Slope'
+    }
+    categories = {  # var: [ {label, color, min, max}, ... ]
+        'iHyd_SPlow': [
+            {'label': 'Can build', 'color': 'b', 'min': 0, 'max': 160, 'limit': 0},
+            {'label': 'Probably can build', 'color': 'y', 'min': 160, 'max': 185, 'limit': 1},
+            {'label': 'Cannot build', 'color': 'r', 'min': 185, 'limit': 2}
+        ],
+        'iHyd_SP2': [
+            {'label': 'Persists', 'color': 'b', 'min': 0, 'max': 1100, 'limit': 0},
+            {'label': 'Occasional Breach', 'color': 'g', 'min': 1100, 'max': 1400, 'limit': 1},
+            {'label': 'Occasional Blowout', 'color': 'y', 'min': 1400, 'max': 2200, 'limit': 1},
+            {'label': 'Blowout', 'color': 'r', 'min': 2200, 'limit': 2}
+        ],
+        'iGeo_Slope': [
+            {'label': 'Flat', 'color': 'c', 'min': 0, 'max': 0.0026, 'limit': 0},
+            {'label': 'Can build', 'color': 'b', 'min': 0.0026, 'max': 0.135, 'limit': 0},
+            {'label': 'Probably can build', 'color': 'g', 'min': 0.135, 'max': 0.20, 'limit': 1},
+            {'label': 'Cannot build', 'color': 'r', 'min': 0.20, 'limit': 2}
+        ]
+    }
+
+    # Report what % of reaches were hydrologically limited
+    print("HYDRO_LIMITATION REPORT:")
+    oVC_EX = select_var(database, 'oVC_EX', table)
+    oCC_EX = select_var(database, 'oCC_EX', table)
+
+    num_diff = 0
+    for i in range(len(oCC_EX)):
+        if oCC_EX[i] != oVC_EX[i]:
+            num_diff += 1
+    perc_diff = round(100 * num_diff / len(oCC_EX), 2)
+    print("> Of {} reaches, {} ({} percent) had their suitability limited by hydrology in Combined FIS".format(len(oCC_EX), num_diff, perc_diff))
+
+    plt.pie([num_diff, len(oCC_EX) - num_diff], labels=['Limited by Hydrology', 'Not Limited by Hydrology'], autopct='%1.1f%%')
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "hydro-limit-pie.png")
+        plt.savefig(out_file_path)
+        plt.close()
+    else:
+        plt.show()
+
+    # Generate color-coded oVC vs. oCC scatters to identify clusters & limiting factors
+    print("Generating color-coded scatters:")
+    for var, var_cat_list in categories.items():
+        var_data = select_var(database, var, table)
+        var_cats = [None] * len(var_data)
+        # colors = []
+
+        # for each hydro value, color it based on its category
+        for i in range(len(oCC_EX)):
+            for cat in var_cat_list:
+                categorized = False
+                min_val = cat['min'] if 'min' in cat else None
+                max_val = cat['max'] if 'max' in cat else None
+                if (min_val is None or var_data[i] >= min_val) and (max_val is None or var_data[i] < max_val):
+                    var_cats[i] = cat['label']
+                    # colors.append(cat['color'])
+                    categorized = True
+                    break
+            if not categorized:     # assign last category if logic failed
+                var_cats[i] = cat['label']
+                # colors.append(cat['color'])
+
+        data = pd.DataFrame(zip(oVC_EX, oCC_EX, var_cats), columns=['oVC', 'oCC', 'category'])
+        
+        # generate a plot
+        # plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=var_cats, alpha=0.5)
+        hue_order = [cat['label'] for cat in var_cat_list]
+        palette = sns.color_palette("muted")
+        custom_palette = [palette[9], palette[2], palette[1], palette[3]]
+        if var == 'iGeo_Slope':
+            custom_palette = [palette[2], palette[9], palette[1], palette[3]]   # swap blue and green
+        
+        plt.figure(figsize=(8,8))
+        sns.scatterplot(data=data, x='oVC', y='oCC', hue='category', hue_order=hue_order,
+                        s=15, edgecolor='none', marker='.', alpha=0.6, palette=custom_palette)
+        plt.grid(True, alpha=0.1)
+        plt.legend(title=f'{var} Categories', markerscale=3, 
+               handler_map={plt.Line2D: HandlerLine2D(update_func=change_alpha)})
+        # plt.plot([0, 40], [0, 40], color='black', linestyle='--', label='1:1 line', alpha=0.33)     # add y=x line
+        plt.xlabel('oVC_EX (Veg FIS Capacity)')
+        plt.ylabel("oCC_EX (Overall FIS Capacity)")
+        plt.title(f"Veg Capacity vs. Overall Capacity - {var}")
+        print(f"...Plot for {var} generated...")
+
+        if out_dir is not None:
+            print(f"...Saving plot to output dir...")
+            out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
+            plt.savefig(out_file_path, dpi=600)
+            plt.close()
+        else:
+            plt.show()
+   
+    # Generate summary oVC vs. oCC scatter, color-coded by most limiting factor
+    print("Generating summary scatter:")
+    
+    # Pre-fetch all variable arrays for efficiency and correctness
+    var_data_dict = {var: select_var(database, var, table) for var in categories.keys()}
+    limiting_cats = ["None"] * len(oCC_EX)
+    for i in range(len(oCC_EX)):
+        cat_severities = {}
+        for var, var_cat_list in categories.items():
+            value = var_data_dict[var][i]
+            var_cat_limit = None
+            for cat in var_cat_list:
+                min_val = cat['min'] if 'min' in cat else None
+                max_val = cat['max'] if 'max' in cat else None
+                if (min_val is None or value >= min_val) and (max_val is None or value < max_val):
+                    var_cat_limit = cat['limit']
+                    break
+            cat_severities[var] = var_cat_limit
+            
+        # for this reach, record the most limiting category or categories as a string
+        max_severity = max(cat_severities.values())
+        if max_severity > 0.0:
+            limiting_cats[i] = ', '.join([cat[cat.find("_")+1:] for cat, val in cat_severities.items() if val == max_severity])
+        else:
+            limiting_cats[i] = 'None'
+
+    data = pd.DataFrame(zip(oVC_EX, oCC_EX, limiting_cats), columns=['oVC', 'oCC', 'limitation'])
+    
+    # generate a plot
+    hue_order = ['None'] + [cat for cat in data['limitation'].unique() if cat != 'None']
+    plt.figure(figsize=(8,8))
+    sns.scatterplot(data=data, x='oVC', y='oCC', hue='limitation',
+                    hue_order=hue_order, s=5, edgecolor='none', alpha=0.6)
+    plt.grid(True, alpha=0.1)
+    plt.legend(title=f'Most Limiting Variable(s)', markerscale=3, 
+               handler_map={plt.Line2D: HandlerLine2D(update_func=change_alpha)})
+    # make legend colors opaque
+    plt.xlabel('oVC_EX (Veg FIS Capacity)')
+    plt.ylabel("oCC_EX (Overall FIS Capacity)")
+    plt.title(f"Hydrologic Limitation of Veg Capacity")
+    print(f"...Summary scatter generated...")
+
+    if out_dir is not None:
+        print(f"...Saving plot to output dir...")
+        out_file_path = os.path.join(out_dir, "hydro-limit-summary.png")
+        plt.savefig(out_file_path, dpi=600)
+        plt.close()
+    else:
+        plt.show()
+    
+    
 
 def capacity_bar_plots(database, out_dir):
     """
@@ -312,173 +458,20 @@ def capacity_bar_plots(database, out_dir):
             plt.close()
         else:
             plt.show()
-
-
-
-
-def hydro_limitation(database, out_dir):
-    """
-    Analyze how hydro parameters (baseflow, peakflow, slope) limited the vegetative capacity.
-    :param database: path to a BRAT database containing variables of interest
-    :param out_dir: optional path to a folder to save plots to
-    """
-    print("> FUNCTION: hydro_limitation()")
-
-    # Hydrologic variables of interest (inputs into the Combined FIS)
-
-    categories = {  # var: [ {label, color, min, max}, ... ]
-        'iHyd_SPlow': [
-            {'label': 'Can build', 'color': '0.6', 'min': 0, 'max': 160},
-            {'label': 'Probably can build', 'color': 'g', 'min': 160, 'max': 185},
-            {'label': 'Cannot build', 'color': 'r', 'min': 185}
-        ],
-        'iHyd_SP2': [
-            {'label': 'Persists', 'color': '0.8', 'min': 0, 'max': 1100},
-            {'label': 'Occasional Breach', 'color': 'b', 'min': 1100, 'max': 1400},
-            {'label': 'Occasional Blowout', 'color': 'g', 'min': 1400, 'max': 2200},
-            {'label': 'Blowout', 'color': 'r', 'min': 2200}
-        ],
-        'iGeo_Slope': [
-            {'label': 'Flat', 'color': 'b', 'min': 0, 'max': 0.0026},
-            {'label': 'Can build', 'color': '0.8', 'min': 0.0026, 'max': 0.135},
-            {'label': 'Probably can build', 'color': 'g', 'min': 0.135, 'max': 0.20},
-            {'label': 'Cannot build', 'color': 'r', 'min': 0.20}
-        ]
-    }
-
-
-    # Report what % of reaches were hydrologically limited
-    print("REPORT:")
-    oVC_EX = select_var(database, 'oVC_EX')
-    oCC_EX = select_var(database, 'oCC_EX')
-
-    num_diff = 0
-    for i in range(len(oCC_EX)):
-        if oCC_EX[i] != oVC_EX[i]:
-            num_diff += 1
-    perc_diff = round(100 * num_diff / len(oCC_EX), 2)
-    print("Of {} reaches, {} ({} percent) had their suitability limited by hydrology in Combined FIS".format(len(oCC_EX), num_diff, perc_diff))
-
-    plt.pie([num_diff, len(oCC_EX) - num_diff], labels=['Limited by Hydrology', 'Not Limited by Hydrology'], autopct='%1.1f%%')
-    if out_dir is not None:
-        print(f"...Saving plot to output dir...")
-        out_file_path = os.path.join(out_dir, "hydro-limit-pie.png")
-        plt.savefig(out_file_path)
-        plt.close()
-    else:
-        plt.show()
-
-    # Generate color-coded oVC vs. oCC scatters to identify clusters & limiting factors
-    print("Generating color-coded scatters:")
-    for var, var_cat_list in categories.items():
-        var_data = select_var(database, var)
-        colors = []
-
-        # for each value, replace it with the correct category label
-        for i in range(len(var_data)):
-            for cat in var_cat_list:
-                label = cat['label']
-                min = cat['min'] if 'min' in cat else None
-                max = cat['max'] if 'max' in cat else None
-                if (min is None or var_data[i] >= min) and (max is None or var_data[i] <= max):
-                    # if not hydro limited, reduce alpha
-                    # alpha = 0.001 if oCC_EX[i] == oVC_EX[i] else 1.0
-                    colors.append('w' if oCC_EX[i] == oVC_EX[i] else cat['color'])
-                    # replace data with category
-                    var_data[i] = label
-                    break
-
-        # generate a plot
-        plt.scatter(oVC_EX, oCC_EX, s=0.75, marker='.', c=colors, alpha=0.5)
-        for cat in var_cat_list:
-            plt.scatter([], [], c=cat['color'], label=cat['label'])
-        plt.legend(title=f'{var} Categorization')
-        plt.xlabel('oVC_EX (Veg FIS Capacity)')
-        plt.ylabel("oCC_EX (Combined FIS Capacity)")
-        plt.title(f"Overall Capacity that differs from Veg Capacity, ({var})")
-        print(f"...Plot for {var} generated...")
-
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
     
 
-def compare_hucs(database, out_dir):
-    """
-    If the database contains multiple HUCs (e.g. merged db), compare their outputs
-    :param database: path to a BRAT database containing variables of interest
-    :param out_dir: optional path to a folder to save plots to
-    """
-    print("> FUNCTION: compare_hucs()")
-
-    huc_names = {   # optional to label hucs on plots; these are for Siletz
-        '1710020404': 'Upper Siletz',
-        '1710020405': 'Middle Siletz',
-        '1710020406': 'Rock Creek',
-        '1710020407': 'Lower Siletz'
-    }
-    vars = [
-        'oVC_EX',
-        'oCC_EX'
-    ]
-    categories = {      # for oVC_EX and oCC_EX
-        'None': {'color': 'r', 'min': 0, 'max': 0},
-        'Rare': {'color': 'orange', 'min': 0, 'max': 1},
-        'Occasional': {'color': 'y', 'min': 1, 'max': 5},
-        'Frequent': {'color': 'g', 'min': 5, 'max': 15},
-        'Pervasive': {'color': 'b', 'min': 15}
-    }
-
-    # check if we have more than one HUC in this db using WatershedID
-    hucs = select_var(database, 'WatershedID')
-    uniq_hucs = set(hucs)
-    if len(uniq_hucs) <= 1:
-        print(f"Error: only one HUC ({hucs[0]}) found in database {database}. Cannot compare.")
-        return
     
-    print("Multiple HUCs found!")
-    print("Generating bar charts...")
-    for var in vars:
-        var_data = select_var(database, var)
-        pairs = zip(hucs, vars)
-        # Generate bar charts of means of vars of interest
-        xs = []
-        means = []
-        for huc in uniq_hucs:
-            xs.append(huc_names[huc]) if huc in huc_names else xs.append(huc)
-            pairs_filtered = [pair for pair in pairs.items() if pair[0]==huc]
-            means.append(np.mean(pairs_filtered))
-        plt.bar(xs, means)
-        plt.ylabel("Mean")
-        plt.title(f"Mean {var} of Different HUCs")
-        print(f"...Plot for {var} generated...")
+# HELPER functions
 
-        if out_dir is not None:
-            print(f"...Saving plot to output dir...")
-            out_file_path = os.path.join(out_dir, "hydro-limit-{}-coded.png".format(var))
-            plt.savefig(out_file_path)
-            plt.close()
-        else:
-            plt.show()
-    
-    # Also generate stacked bar charts with all data categorized
-
-
-
-
-def select_var(database, var: str):
+def select_var(database: str, var: str, table: str = "ReachAttributes"):
     """
-    Utility function to return column of values for a specified feature from ReachAttributes
-    :param database: path to a BRAT database containing variables of interest
+    Utility function to return column of values for a specified feature from specified table
+    :param database: path to a BRAT database (.gpkg)
     :param var: database name of the feature to be returned"""
 
     conn = sqlite3.connect(database)
     curs = conn.cursor()
-    curs.execute(f'SELECT {var} FROM ReachAttributes')
+    curs.execute(f'SELECT {var} FROM {table}')
     result = curs.fetchall()
     var_data = [row[0] for row in result]   # convert to ints from tuples
     curs.close()
@@ -487,19 +480,26 @@ def select_var(database, var: str):
     return var_data
 
 
+def change_alpha(handle, original):
+    handle.update_from(original)
+    handle.set_alpha(1)
+    handle.set_marker('.')
+
+
 
 def main():
 
     parser = argparse.ArgumentParser(
-        description='Takes a BRAT databases and performs additional analysis on the output variables in an attempt to identify any patterns.'
+        description='Takes a BRAT database and performs additional analysis on the output variables in an attempt to identify any patterns.'
     )
     parser.add_argument('database', help='Path to at least one BRAT SQLite database (.gpkg). Add additional paths separated by spaces.', type=str)
+    parser.add_argument('-t', '--table', help='(Optional) Table to query in the provided database. Defaults to ReachAttributes, but use CombinedOutputs for merged dbs.', type=str, default='ReachAttributes')
     parser.add_argument('-o', '--output', help='(Optional) Path to an output directory where plots will be saved instead of displayed at runtime. If none provided, plots will not be saved.', type=str)
     args = parser.parse_args()
     print(args.database)
 
     try:
-        analyze(args.database, args.output)
+        analyze(args.database, args.table, args.output)
 
     except Exception as ex:
         traceback.print_exc(file=sys.stdout)
