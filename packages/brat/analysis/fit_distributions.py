@@ -31,18 +31,20 @@ import sqlite3
 source_table = 'CombinedOutputs'  # TABLE NAME in the source database
 
 # Parallel lists
-inputs = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPlow', 'iHyd_SP2', 'iGeo_Slope',]
-x_maxes = [(0, 4), (0, 4), (0, 30), (0, 1500), (0, 0.8)]
+inputs = ['iVeg_30EX', 'iVeg100EX', 'iHyd_SPlow', 'iHyd_SP2', 'iGeo_Slope']
+xlabels = ['30m Vegetation Suitability', '100m Vegetation Suitability', 'Baseflow (watts/m)', 'Peak Flow (watts/m)', 'Slope (decimal %)']
+xbounds = [(0, 4), (0, 4), (0, 15), (0, 1200), (0, 0.8)]
 filter_quantiles = [1.0, 1.0, 0.995, 0.95, 0.995]  # quantiles for filtering outliers. set to 1.0 to disable filtering
 
 # Distributions to try fitting (scipy.stats distributions)
-dist_names = ['norm', 'lognorm', 't', 'beta', 'expon', 'gamma', 'weibull_min', 'pareto']
+dist_names = ['norm', 'expon', 'pareto']
+# dist_names = ['norm', 'lognorm', 't', 'expon', 'gamma', 'weibull_min', 'pareto']
 
 
 def fit_inputs(database: str):
     """Fit the distributions for all inputs in the source database"""
     
-    for input_var, xlim, quantile in zip(inputs, x_maxes, filter_quantiles):
+    for i, input_var in enumerate(inputs):
         print(f"--- Fitting distributions for {input_var} ---")
         plt.figure(figsize=(10, 6))
 
@@ -53,20 +55,21 @@ def fit_inputs(database: str):
             raw_y = [row[0] for row in cur.fetchall()]
 
         # Filter outliers
-        threshold = np.quantile(raw_y, quantile)
+        threshold = np.quantile(raw_y, filter_quantiles[i])
         y = [val for val in raw_y if val <= threshold]
         print(f" -- Max filtered value of {input_var}: {max(y)}")
         
         # Plot the histogram
         h = plt.hist(y, bins=100, density=True, alpha=0.5, label=f"{input_var} Histogram")
-        plt.xlim(xlim[0], xlim[1])
+        plt.xlim(xbounds[i][0], xbounds[i][1])
+        plt.xlabel(xlabels[i])
         plt.title(input_var)
         # Set y-limit to 1.2x the max histogram density to avoid extreme PDF values distorting the plot
         hist_max = max(h[0]) if len(h[0]) > 0 else 1
         plt.ylim(0, hist_max * 1.2)
         
         # High-resolution x values for smooth PDFs
-        x = np.linspace(xlim[0], xlim[1], 1000)
+        x = np.linspace(xbounds[i][0], xbounds[i][1], 1000)
             
         for dist_name in dist_names:
             dist = getattr(scipy.stats, dist_name)
@@ -85,19 +88,19 @@ def fit_inputs(database: str):
                 else:
                     pdf_fitted = dist.pdf(x, loc=loc, scale=scale)
                 plt.plot(x, pdf_fitted, label=dist_name)
-                fit_tests(y, dist_name, params)
+                # fit_tests(y, dist_name, params)
 
             except Exception as e:
                 print(f"Could not fit {dist_name} to variable {input_var}: {e}")
         
-        plt.title(f"Variable {input_var} Fitted")
+        plt.title(f"Input {input_var} Fitted")
         plt.ylim()
-        plt.xlim(xlim)
-        plt.legend(loc='upper right')
+        plt.xlim(xbounds[i])
         plt.ylabel("Density")
         plt.grid(True)
+        plt.legend()
         plt.tight_layout()
-        
+
     plt.show()
     
 def fit_tests(y, dist_name, params):
